@@ -26,6 +26,7 @@ def main() -> None:
     record = {
         "ts": int(time.time()),
         "session_id": event.get("session_id", ""),
+        "tool_name": event.get("tool_name", ""),
         "subagent_type": tool_input.get("subagent_type", ""),
         "model": tool_input.get("model", "(not passed)"),
         "prompt_head": (tool_input.get("prompt", "") or "")[:200],

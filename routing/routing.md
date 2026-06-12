@@ -7,12 +7,12 @@ work to a cheap model twice.
 
 ## Tiers
 
-| Tier | Agent     | Model  | Use for |
-|------|-----------|--------|---------|
-| T0   | scout     | haiku  | exploration, search, reading, summarizing |
-| T0   | grunt     | haiku  | mechanical edits, 1-2 files, zero design decisions |
-| T1   | builder   | sonnet | features, bug fixes, tests, refactors <=5 files |
-| T2   | architect | opus   | cross-cutting design, gnarly debugging, concurrency, migrations, security, performance |
+| Tier | Agent              | Model  | Use for |
+|------|--------------------|--------|---------|
+| T0   | gearbox:scout      | haiku  | exploration, search, reading, summarizing |
+| T0   | gearbox:grunt      | haiku  | mechanical edits, 1-2 files, zero design decisions |
+| T1   | gearbox:builder    | sonnet | features, bug fixes, tests, refactors <=5 files |
+| T2   | gearbox:architect  | opus   | cross-cutting design, gnarly debugging, concurrency, migrations, security, performance |
 
 ## Routing rules
 
@@ -43,7 +43,7 @@ work to a cheap model twice.
    - Immediately BEFORE any T1/T2 delegation, run `git status --short` and
      keep the output. When verifier fires, pass that snapshot labeled
      BASELINE along with the task text and implementer report.
-   - Implementer MODIFIED files -> delegate to verifier (model: haiku),
+   - Implementer MODIFIED files -> delegate to gearbox:verifier (model: haiku),
      passing all of: (a) the original task text verbatim, (b) the
      implementer's full completion report, (c) the instruction to inspect
      the diff itself via git. Do not accept the result before the verdict.
