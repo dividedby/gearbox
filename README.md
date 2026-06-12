@@ -17,6 +17,8 @@ claude
 /plugin install gearbox@gearbox
 ```
 
+**At the scope prompt, choose user (all projects). If you accept the default, Gearbox only routes in the folder you installed from.**
+
 Restart the session. The SessionStart hook activates routing automatically on every session start — no per-project setup required.
 
 **Recommended:** set your session model to sonnet (`/model sonnet`) — this is the orchestrator tier. Gearbox controls subagent models; it does not override your main session model.
@@ -52,8 +54,14 @@ Run `/gearbox:init` inside a project to create a local copy of the routing polic
 - **Dirty-file blind spot (mitigated):** The verifier requires a BASELINE snapshot, but the orchestrator must remember to capture and pass it before each T1/T2 delegation. If omitted, the verifier falls back to full-diff scope-checking, which can false-reject in repos with pre-existing uncommitted changes.
 - **Agents load on session start:** If you add or update agent files, restart your Claude Code session before the new definitions take effect.
 - **Effort propagation untested:** The `ultrathink` directive in T2 prompts has not been verified to propagate to subagents across all surfaces. Treat it as experimental.
-- **SessionStart hook injection:** The routing policy is injected via a SessionStart hook. Some Claude Code surfaces may handle hook output differently — if routing rules seem absent, verify the hook ran or run `/gearbox:init` to create a project-local copy.
+- **SessionStart hook injection:** The routing policy is injected via a SessionStart hook. Some Claude Code surfaces may handle hook output differently — if routing rules seem absent, run `/gearbox:init` to create a project-local copy at `.claude/routing.md`, which the hook will prefer over the plugin default.
 - **Routing policy context cost:** The routing policy is injected each session start (~2.5KB context cost).
+- **Agent namespacing:** Gearbox agents install as `gearbox:scout`, `gearbox:grunt`, `gearbox:builder`, `gearbox:architect`, and `gearbox:verifier`. Reference them by these full names in prompts and routing rules.
+
+## Roadmap
+
+- **0.2.0** — PreToolUse hook auto-captures `git status --short` BASELINE before every T1/T2 delegation; verifier always receives it, guaranteed rather than instructed.
+- **0.3.0** — Learned router trained on `gearbox-log.jsonl` outcomes: a contextual bandit over `{task-type × model}` pairs, replacing the static rubric with a policy that improves with use.
 
 ## Telemetry
 
