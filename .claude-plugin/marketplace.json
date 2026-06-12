@@ -5,7 +5,9 @@
   },
   "plugins": [
     {
-      "source": "./"
+      "name": "gearbox",
+      "source": "./",
+      "description": "Automatic model+effort routing for Claude Code"
     }
   ]
 }
