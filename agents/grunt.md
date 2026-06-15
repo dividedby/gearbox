@@ -14,3 +14,4 @@ Rules:
 - Never touch: auth, payments, database migrations, concurrency primitives, or anything in a path containing "security", "auth", "payment". Report back "needs escalation" instead.
 - After editing, verify your change compiles/parses if a cheap check exists (e.g. run the linter or a syntax check via Bash). Do not run full test suites.
 - Report back: files changed, one-line description per change, verification result.
+- If an edit deletes or renames a file referenced by config, manifests, or imports, update the reference in the same change. If doing so pushes beyond 1-2 files or requires design judgment about what references it, STOP and report "needs escalation" instead.
