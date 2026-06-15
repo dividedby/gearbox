@@ -26,6 +26,10 @@ mkdir -p .claude
 ```bash
 if [ -f ".claude/routing.md" ]; then
   echo "Notice: .claude/routing.md already exists — skipping copy. Edit it directly to customize."
+elif [ -z "${CLAUDE_PLUGIN_ROOT}" ]; then
+  echo "Error: CLAUDE_PLUGIN_ROOT is not set — run this inside a Claude Code session with the gearbox plugin loaded (see /gearbox:doctor CHECK 0)." >&2
+elif [ ! -f "${CLAUDE_PLUGIN_ROOT}/routing/routing.md" ]; then
+  echo "Error: ${CLAUDE_PLUGIN_ROOT}/routing/routing.md not found — the plugin install may be incomplete. Run /gearbox:doctor." >&2
 else
   cp "${CLAUDE_PLUGIN_ROOT}/routing/routing.md" ".claude/routing.md"
   echo "Local routing override created. The SessionStart hook will now inject this copy instead of the plugin default. Restart the session."
