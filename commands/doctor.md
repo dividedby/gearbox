@@ -146,14 +146,19 @@ Evaluate:
 ## CHECK 7 — CONFLICTING LEGACY INSTALL
 
 ```bash
-# Check for pre-plugin agent files
+# Project-level pre-plugin agent files
 test -f ".claude/agents/scout.md" && echo "AGENTS_DIR_FOUND" || echo "agents_dir_clean"
-# Check for @.claude/routing.md reference in CLAUDE.md
+# User-level agent files that shadow the namespaced plugin agents (affect every project)
+for a in scout grunt builder architect verifier; do
+  test -f "$HOME/.claude/agents/$a.md" && echo "USER_AGENT_FOUND:$a"
+done
+# @.claude/routing.md reference in CLAUDE.md
 grep -l "@.claude/routing.md" CLAUDE.md 2>/dev/null && echo "CLAUDE_MD_FOUND" || echo "claude_md_clean"
 ```
 
 - Neither found → **PASS**
-- Either found → **WARN**: "pre-plugin Gearbox files detected in this repo — project agents shadow plugin agents and the policy may load twice; remove the old copies"
+- Any `USER_AGENT_FOUND:<name>` lines → **WARN**: "user-scope agent file(s) in ~/.claude/agents/ shadow the namespaced plugin agents across every project — rename or remove them"; list which names were found
+- Either project-level or CLAUDE.md reference found → **WARN**: "pre-plugin Gearbox files detected in this repo — project agents shadow plugin agents and the policy may load twice; remove the old copies"
   - If `.claude/agents/scout.md` exists, note it
   - If `CLAUDE.md` contains the reference, note that too
 
