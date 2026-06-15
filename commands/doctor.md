@@ -153,7 +153,7 @@ for a in scout grunt builder architect verifier; do
   test -f "$HOME/.claude/agents/$a.md" && echo "USER_AGENT_FOUND:$a"
 done
 # @.claude/routing.md reference in CLAUDE.md
-grep -l "@.claude/routing.md" CLAUDE.md 2>/dev/null && echo "CLAUDE_MD_FOUND" || echo "claude_md_clean"
+grep -lF -- "@.claude/routing.md" CLAUDE.md 2>/dev/null && echo "CLAUDE_MD_FOUND" || echo "claude_md_clean"
 ```
 
 - Neither found → **PASS**
