@@ -26,3 +26,4 @@ Rules:
   the task explicitly authorizes it. These are the measuring instruments.
 - Before your first edit, state the list of files you intend to modify. If
   mid-task you need a file outside that list, stop and report instead.
+- Before deleting or renaming a file, check whether it is referenced in config, manifests, lockfiles, import statements, or plugin/agent registries. Update those references first or in the same change — never leave a dangling reference. Deleting a file still wired into config can break the build or lock the tool out of its own components (e.g. removing an agent file still listed in routing/registry config).
