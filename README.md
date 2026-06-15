@@ -49,6 +49,15 @@ Verdict outcomes:
 
 Run `/gearbox:init` inside a project to create a local copy of the routing policy at `.claude/routing.md`. The SessionStart hook will inject your local copy instead of the plugin default. Edit `.claude/routing.md` to adjust tier thresholds, add project-specific hard floors, or extend the escalation rules.
 
+## Integrating with an existing CLAUDE.md
+
+If you already have delegation, agent, or model-selection rules in your CLAUDE.md, reconcile them before first use:
+
+- **Trim duplicate tier/routing rules.** Gearbox injects its full routing policy (tier table, classification, escalation ladder, verifier protocol) at SessionStart. If your CLAUDE.md already covers any of this, remove it — duplicate or conflicting instructions confuse the orchestrator. Keep only what Gearbox doesn't cover: project-specific hard floors (e.g. "never delegate auth changes below T2") and house rules. The right home for project-specific routing overrides is `.claude/routing.md` via `/gearbox:init`, not CLAUDE.md.
+- **Remove colliding user-level agent files.** Legacy files in `~/.claude/agents/` whose names match Gearbox agents (scout, grunt, builder, architect, verifier) shadow the plugin agents across every project. Delete or rename any conflicts. Run `/gearbox:doctor` (CHECK 7) to detect both user-level and project-level collisions.
+- **Use namespaced agent names.** In any prompts or rules you keep, reference agents by their full names: `gearbox:scout`, `gearbox:grunt`, `gearbox:builder`, `gearbox:architect`, `gearbox:verifier`.
+- **Set your main session model to sonnet.** Run `/model sonnet` — Gearbox routes subagents but does not change your orchestrator model.
+
 ## Troubleshooting
 
 Something not working? Run `/gearbox:doctor` first — it checks the ten most common failure modes and tells you the fix. Paste its output into any issue you file.
