@@ -30,8 +30,8 @@ python3 bench/eval.py
 
 Prints a per-tier scorecard: acceptability rate, router cost, modeled baseline
 cost, and cost-saved %.  Three baselines are **modeled offline** using the
-same token counts the router recorded × per-tier blended rates (2026-06:
-haiku $1.5/M, sonnet $5.0/M, opus $8.0/M):
+same token counts the router recorded × per-tier blended rates (the
+`BLENDED_RATES` card in `hooks/scripts/rates.py`):
 
 - **always-sonnet** — every task dispatched to sonnet regardless of complexity
   (measured via the `always-t1` profile → `gearbox:builder`).
