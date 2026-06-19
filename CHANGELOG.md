@@ -6,6 +6,17 @@ issues/epics, not here — see the [open epics](https://github.com/dividedby/gea
 Versions before full divergence (2026-06-18) were also mirrored upstream as PRs
 (#10–#24); upstream never engaged, so mirroring stopped. See `docs/adr/0002-full-divergence.md`.
 
+## [Unreleased] — 2026-06-19 · Remove session-summary seam (#21, epic #6)
+
+### Removed
+- **#21** `hooks/scripts/session-summary.py` and its `SessionEnd` hook registration
+  removed. The script wrote per-session rollup records to `~/.claude/gearbox-sessions.jsonl`,
+  but that file had zero consumers — ~95% of its data is re-derivable from
+  `gearbox-log.jsonl`, and the only unique datum (`reason`) was judged not worth the
+  maintenance cost. The `SessionEnd` block in `hooks/hooks.json` is removed entirely
+  (session-summary was its sole entry). Any existing `~/.claude/gearbox-sessions.jsonl`
+  file is no longer written; users may delete it at their discretion.
+
 ## [Unreleased] — 2026-06-19 · task_cap documented as warn-only by design (#19, epic #6)
 - **#19** Clarified in-place that `task_cap` is **warn-only by design** and never
   blocks dispatches. `budget-warn.py` docstring now leads with an explicit
@@ -73,10 +84,6 @@ Versions before full divergence (2026-06-18) were also mirrored upstream as PRs
 - **R8** composable status-line segment (`bench/statusline.py`). Plugins cannot register
   the main `statusLine` (only `subagentStatusLine`), so it is wired into the user's own
   `settings.json`; doctor CHECK 10 reports wiring status (informational, never fails).
-- **R9** `SessionEnd` hook (`hooks/scripts/session-summary.py`) writing a per-session
-  rollup to `~/.claude/gearbox-sessions.jsonl`. `Stop` fires every turn; `SessionEnd` is
-  the correct once-per-session hook (verified against the hooks reference). The payload
-  carries no cost/tier data, so the hook reads the dispatch log filtered by `session_id`.
 - Explicit escalation logging: the `[gearbox-escalation from=T<n> to=T<m>]` marker →
   `escalation`/`escalated_from`/`escalated_to` log fields.
 
