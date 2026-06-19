@@ -27,6 +27,14 @@ import sys
 import time
 from pathlib import Path
 
+# Ensure hooks/scripts/ is on the path so rates.py is importable regardless of
+# how this module is loaded (directly or via importlib from another directory).
+_scripts_dir = str(Path(__file__).resolve().parent)
+if _scripts_dir not in sys.path:
+    sys.path.insert(0, _scripts_dir)
+
+from rates import BLENDED_RATES as _BLENDED_RATES, TOKEN_RATES as _TOKEN_RATES
+
 # Mirrors routing/routing.md tier assignments. Keyed by bare agent name
 # (no "gearbox:" prefix). Used to derive model/tier when not explicitly passed.
 _AGENT_ROUTING: dict = {
@@ -41,24 +49,7 @@ _AGENT_ROUTING: dict = {
 
 _VERDICT_RE = re.compile(r"VERDICT:\s*(APPROVE|REJECT)", re.IGNORECASE)
 
-# Per-component USD-per-million-tokens rates, 2026-06 Anthropic rate card.
-# Re-pin date and values when pricing changes.
-# Keys: input, output, cache_read, cache_write_5m, cache_write_1h.
-_TOKEN_RATES: dict = {
-    "haiku":  {"input": 1.00, "output":  5.00, "cache_read": 0.10, "cache_write_5m": 1.25, "cache_write_1h":  2.00},
-    "sonnet": {"input": 3.00, "output": 15.00, "cache_read": 0.30, "cache_write_5m": 3.75, "cache_write_1h":  6.00},
-    "opus":   {"input": 5.00, "output": 25.00, "cache_read": 0.50, "cache_write_5m": 6.25, "cache_write_1h": 10.00},
-}
 _DEFAULT_TOKEN_RATES = _TOKEN_RATES["sonnet"]
-
-# ponytail: rough blended USD-per-million-tokens fallback rates, 2026-06 rate
-# card. Used only when the per-component split is absent (degenerate/old payload).
-# Re-pin date and values when pricing changes.
-_BLENDED_RATES = {
-    "haiku": 1.5,
-    "sonnet": 5.0,
-    "opus": 8.0,
-}
 _DEFAULT_RATE = _BLENDED_RATES["sonnet"]
 
 # ponytail: regex best-effort secret scrubber — not a full secret scanner;
