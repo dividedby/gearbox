@@ -65,8 +65,21 @@ work to a cheap model twice.
 9. **Independent verification.** After any T1/T2 delegation:
    - The `capture-baseline` PreToolUse hook fires automatically before each
      T1/T2 dispatch and writes the pre-edit `git status --short` snapshot to
-     `.claude/gearbox-baseline.txt` in the project root. The verifier reads
-     that file directly — you no longer need to capture BASELINE manually.
+     `.claude/gearbox-baseline.txt` in the project root. You no longer need
+     to capture BASELINE manually.
+   - **Default / sequential path:** the hook writes `.claude/gearbox-baseline.txt`;
+     the verifier reads it; no orchestrator action needed.
+   - **Parallel path** (only when dispatching >1 T1/T2 implementer concurrently):
+     concurrent dispatches would clobber the single baseline file, so the orchestrator
+     must mint a short, distinct `baseline_id` token per implementer dispatch
+     (e.g. `impl-a`, `impl-b`; token must match `^[A-Za-z0-9_-]{1,64}$`). Embed it
+     in that implementer's Task prompt as `[gearbox-baseline-id=<id>]`. The hook
+     detects the marker and also writes `.claude/gearbox-baseline-<id>.txt`. Pass
+     the same id to the matching verifier prompt as `[gearbox-baseline-id=<id>]` or
+     `BASELINE_ID=<id>` so it reads the correct keyed file.
+   - **Important:** `tool_use_id` is NOT available to the orchestrator at Task
+     dispatch time and must not be used as the baseline_id. The orchestrator mints
+     the token itself.
    - Implementer MODIFIED files -> delegate to gearbox:verifier (model: haiku),
      passing all of: (a) the original task text verbatim, (b) the
      implementer's full completion report, (c) the instruction to inspect
