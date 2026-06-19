@@ -32,11 +32,14 @@ BLENDED_RATES: dict = {
 }
 
 # ---------------------------------------------------------------------------
-# Haiku reference rate: denominator for weighted-token math.
-# A pure-input Haiku dispatch of N tokens costs N weighted tokens.
+# Haiku reference rate: denominator for weighted-token math, so a pure-input
+# Haiku dispatch of N tokens equals N weighted tokens. Currently equals the
+# haiku input rate, but kept as an independent constant: it is a tunable proxy
+# for the unpublished per-model subscription weighting, not the raw API price.
+# Don't derive it from TOKEN_RATES — that would couple the knob to pricing.
 # ---------------------------------------------------------------------------
 
-HAIKU_REF: float = TOKEN_RATES["haiku"]["input"]  # 1.00 USD/M
+HAIKU_REF: float = 1.00  # USD/M
 
 
 # ---------------------------------------------------------------------------
@@ -80,11 +83,8 @@ if __name__ == "__main__":
     assert BLENDED_RATES["sonnet"] == 5.0, f"blended sonnet: {BLENDED_RATES['sonnet']}"
     assert BLENDED_RATES["opus"]   == 8.0, f"blended opus: {BLENDED_RATES['opus']}"
 
-    # --- Haiku reference rate ---
+    # --- Haiku reference rate (independent tunable; pinned to 1.00) ---
     assert HAIKU_REF == 1.00, f"HAIKU_REF: {HAIKU_REF}"
-    # HAIKU_REF must equal haiku input rate (it is derived from it)
-    assert HAIKU_REF == TOKEN_RATES["haiku"]["input"], \
-        f"HAIKU_REF must equal TOKEN_RATES['haiku']['input'], got {HAIKU_REF}"
 
     print("rates selfcheck: OK")
     sys.exit(0)
