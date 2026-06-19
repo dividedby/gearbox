@@ -92,11 +92,13 @@ off the fork, and mirror each change upstream as a PR in case the maintainer ret
     thinking doesn't cross the Task boundary.
   - Mirrored upstream in the ongoing sync PR #24; fork-only `repository`/version
     pinned to upstream values there.
-- Sync cadence: when upstream moves, merge `upstream/main` into fork `main`
-  (merge-commit, per our merge-commit-only policy — never rebase pushed `main`),
-  keeping our unmerged fixes on top. If a PR merges upstream, drop our copy on the
-  next sync. The fork-only `repository`/version lines are the expected permanent
-  divergence.
+- **Full divergence (2026-06-18):** upstream stayed silent through all 11 issues,
+  PRs #10–#23, and the long-lived sync PR #24. We closed #24, deleted the
+  `upstream-sync` branch, and now run as a hard fork — no upstream mirroring or
+  scheduled tracking. The `upstream` remote stays configured (dormant) in case the
+  maintainer revives the project; re-engagement is pull-only and on demand (see
+  `CLAUDE.md` → "If upstream revives"). The `repository`/version lines are now just
+  the fork's own identity, not a divergence from anything we publish.
 
 ## What it does
 
@@ -122,31 +124,29 @@ Routing policy is injected via SessionStart hook (~2.5KB of context). Delegation
 
 ## Issues we filed
 
-All 11 implemented in the fork. We have since **closed all 11 issues and the per-theme
-PRs #10–#23** (the maintainer never responded) and now offer everything upstream
-through the single ongoing sync PR [#24](https://github.com/Adityaraj0421/gearbox/pull/24)
-(per the one-PR policy in `CLAUDE.md`). We no longer file upstream issues. The table
+All 11 implemented in the fork. The maintainer never responded, so we **closed all 11
+issues and PRs #10–#23**, then on **2026-06-18 closed the sync PR #24** and stopped
+contributing upstream entirely (full divergence — see the "Fork" section). The table
 below is historical record.
 
 | # | Title | Status |
 |---|-------|--------|
-| [#1](https://github.com/Adityaraj0421/gearbox/issues/1) | doctor: CHECK 7 should scan ~/.claude/agents/ for user-level agent conflicts | fork ✓ · PR [#10](https://github.com/Adityaraj0421/gearbox/pull/10) open |
-| [#2](https://github.com/Adityaraj0421/gearbox/issues/2) | docs: add integration guide for existing CLAUDE.md delegation rules | fork ✓ · PR [#11](https://github.com/Adityaraj0421/gearbox/pull/11) open |
-| [#3](https://github.com/Adityaraj0421/gearbox/issues/3) | routing: add circuit breaker after T2 failure — escalation ladder has no stop condition | fork ✓ · PR [#12](https://github.com/Adityaraj0421/gearbox/pull/12) open |
-| [#4](https://github.com/Adityaraj0421/gearbox/issues/4) | verifier: clarify scope policy for formatting-only changes in declared file set | fork ✓ · PR [#13](https://github.com/Adityaraj0421/gearbox/pull/13) open |
-| [#5](https://github.com/Adityaraj0421/gearbox/issues/5) | feat(log): enrich gearbox-log.jsonl with post-completion metrics (cost, turns, tokens) | fork ✓ · PR [#15](https://github.com/Adityaraj0421/gearbox/pull/15) open |
-| [#6](https://github.com/Adityaraj0421/gearbox/issues/6) | bench: add outcome-labeling runner to collect training data for v0.3.0 learned router (depends on #5) | fork ✓ · PR [#16](https://github.com/Adityaraj0421/gearbox/pull/16) open |
-| [#7](https://github.com/Adityaraj0421/gearbox/issues/7) | scout: grant read-only Bash for gh/git/log recon | fork ✓ · PR [#14](https://github.com/Adityaraj0421/gearbox/pull/14) open |
-| [#8](https://github.com/Adityaraj0421/gearbox/issues/8) | verifier: flag masked failures (success:false / unchecked exit codes) | fork ✓ · PR [#13](https://github.com/Adityaraj0421/gearbox/pull/13) open |
-| [#9](https://github.com/Adityaraj0421/gearbox/issues/9) | builder/grunt: update config before deleting referenced files (avoid self-lockout) | fork ✓ · PR [#14](https://github.com/Adityaraj0421/gearbox/pull/14) open |
-| [#20](https://github.com/Adityaraj0421/gearbox/issues/20) | scout: require command-derived counts, ref pinning, and confidence tags | fork ✓ · PR [#21](https://github.com/Adityaraj0421/gearbox/pull/21) open |
-| [#22](https://github.com/Adityaraj0421/gearbox/issues/22) | feat(log): record resolved model, tier, and verifier verdict for reward signal | fork ✓ · PR [#23](https://github.com/Adityaraj0421/gearbox/pull/23) open |
+| [#1](https://github.com/Adityaraj0421/gearbox/issues/1) | doctor: CHECK 7 should scan ~/.claude/agents/ for user-level agent conflicts | fork ✓ · PR [#10](https://github.com/Adityaraj0421/gearbox/pull/10) closed |
+| [#2](https://github.com/Adityaraj0421/gearbox/issues/2) | docs: add integration guide for existing CLAUDE.md delegation rules | fork ✓ · PR [#11](https://github.com/Adityaraj0421/gearbox/pull/11) closed |
+| [#3](https://github.com/Adityaraj0421/gearbox/issues/3) | routing: add circuit breaker after T2 failure — escalation ladder has no stop condition | fork ✓ · PR [#12](https://github.com/Adityaraj0421/gearbox/pull/12) closed |
+| [#4](https://github.com/Adityaraj0421/gearbox/issues/4) | verifier: clarify scope policy for formatting-only changes in declared file set | fork ✓ · PR [#13](https://github.com/Adityaraj0421/gearbox/pull/13) closed |
+| [#5](https://github.com/Adityaraj0421/gearbox/issues/5) | feat(log): enrich gearbox-log.jsonl with post-completion metrics (cost, turns, tokens) | fork ✓ · PR [#15](https://github.com/Adityaraj0421/gearbox/pull/15) closed |
+| [#6](https://github.com/Adityaraj0421/gearbox/issues/6) | bench: add outcome-labeling runner to collect training data for v0.3.0 learned router (depends on #5) | fork ✓ · PR [#16](https://github.com/Adityaraj0421/gearbox/pull/16) closed |
+| [#7](https://github.com/Adityaraj0421/gearbox/issues/7) | scout: grant read-only Bash for gh/git/log recon | fork ✓ · PR [#14](https://github.com/Adityaraj0421/gearbox/pull/14) closed |
+| [#8](https://github.com/Adityaraj0421/gearbox/issues/8) | verifier: flag masked failures (success:false / unchecked exit codes) | fork ✓ · PR [#13](https://github.com/Adityaraj0421/gearbox/pull/13) closed |
+| [#9](https://github.com/Adityaraj0421/gearbox/issues/9) | builder/grunt: update config before deleting referenced files (avoid self-lockout) | fork ✓ · PR [#14](https://github.com/Adityaraj0421/gearbox/pull/14) closed |
+| [#20](https://github.com/Adityaraj0421/gearbox/issues/20) | scout: require command-derived counts, ref pinning, and confidence tags | fork ✓ · PR [#21](https://github.com/Adityaraj0421/gearbox/pull/21) closed |
+| [#22](https://github.com/Adityaraj0421/gearbox/issues/22) | feat(log): record resolved model, tier, and verifier verdict for reward signal | fork ✓ · PR [#23](https://github.com/Adityaraj0421/gearbox/pull/23) closed |
 
 ## Roadmap
 
-Fork-driven (upstream is dormant — latest upstream release v0.1.2, our sync PR
-[#24](https://github.com/Adityaraj0421/gearbox/pull/24) untouched by the
-maintainer). Full detail, rationale, and source tags (`[PA]` prior-art / `[CC]`
+Fork-driven (hard fork as of 2026-06-18; upstream abandoned, last upstream release
+v0.1.2). Full detail, rationale, and source tags (`[PA]` prior-art / `[CC]`
 Claude Code features / `[KB]` agent-research) live in
 [docs/roadmap.md](docs/roadmap.md), refreshed by the 2026-06-16 reassessment.
 
@@ -219,8 +219,9 @@ Fork `main` auto-updates. To force it: `/plugin install gearbox@gearbox`, restar
 ## How to check issue status
 
 ```bash
-gh issue list --repo Adityaraj0421/gearbox --json number,title,state --jq '.[] | [.number, .state, .title] | @tsv'
+gh issue list --repo dividedby/gearbox --json number,title,state --jq '.[] | [.number, .state, .title] | @tsv'
 ```
+(The historical upstream issues #1–#22 live on `Adityaraj0421/gearbox` and are all closed.)
 
 ## Project-local customisation
 
