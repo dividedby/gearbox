@@ -6,15 +6,35 @@ a task-class by keyword-matching prompt_head, aggregates per (task_class, tier),
 and writes a Markdown recommendation table to ~/.claude/gearbox-recommendations.md
 (or --out PATH).
 
+Optionally consumes correction signals from bench/mine-corrections.py via
+--corrections to factor negative-reward signals (re-dispatches, escalations,
+orchestrator corrections) into the approve-rate denominator.
+
 Read-only on the log; writes one Markdown artifact.
 """
 import argparse
+import importlib.util
 import json
 import os
 import sys
 from collections import defaultdict
 from datetime import date
 from pathlib import Path
+
+
+def _load_mine_corrections():
+    """Load bench/mine-corrections.py and return the module object.
+
+    Uses importlib because the filename contains a hyphen.
+    Returns None if the module cannot be loaded (graceful degradation).
+    """
+    path = Path(__file__).resolve().parent / "mine-corrections.py"
+    if not path.exists():
+        return None
+    spec = importlib.util.spec_from_file_location("_mine_corrections", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 # ---------------------------------------------------------------------------
@@ -109,15 +129,21 @@ def bucket_task_class(prompt_head: str) -> str:
 # Aggregation
 # ---------------------------------------------------------------------------
 
-def aggregate(records: list) -> dict:
+def aggregate(records: list, correction_signals: dict | None = None) -> dict:
     """Return {(task_class, tier): cell} excluding TV rows.
 
     cell keys:
-      n           - row count
-      approve     - count of 'approve' verdicts
-      reject      - count of 'reject' verdicts
-      cost_sum    - sum of cost_usd (non-null)
-      cost_count  - count of non-null cost_usd rows
+      n             - row count
+      approve       - count of 'approve' verdicts
+      reject        - count of 'reject' verdicts
+      cost_sum      - sum of cost_usd (non-null)
+      cost_count    - count of non-null cost_usd rows
+      correction    - count of dispatches flagged as corrected (from mine-corrections)
+
+    correction_signals: optional {(session_id, dispatch_id): signal} map from
+      mine-corrections.py.  When provided, each corrected dispatch increments
+      the cell's 'correction' counter and counts as a synthetic 'reject' for
+      approve-rate purposes (if it has no explicit verdict).
     """
     cells: dict = defaultdict(lambda: {
         "n": 0,
@@ -125,6 +151,7 @@ def aggregate(records: list) -> dict:
         "reject": 0,
         "cost_sum": 0.0,
         "cost_count": 0,
+        "correction": 0,
     })
 
     for rec in records:
@@ -152,6 +179,18 @@ def aggregate(records: list) -> dict:
                 cell["cost_count"] += 1
             except (TypeError, ValueError):
                 pass
+
+        # Factor in correction signal: if this dispatch was later corrected
+        # (no explicit verdict), treat it as a synthetic reject so approve%
+        # is penalised for tiers that frequently required corrections.
+        if correction_signals is not None:
+            session_id = rec.get("session_id", "")
+            dispatch_id = rec.get("dispatch_id") or rec.get("uid", "")
+            sig = correction_signals.get((session_id, dispatch_id))
+            if sig and sig.get("corrected") and verdict is None:
+                cell["correction"] += 1
+                # A correction without an explicit verifier verdict is treated as an implicit reject for the failing tier.
+                cell["reject"] += 1  # synthetic reject for approve-rate penalty
 
     return dict(cells)
 
@@ -385,6 +424,41 @@ def selfcheck() -> None:
     assert rt_low.get("mechanical-edit") is None, \
         f"recommended_tiers: low-n should yield None, got: {rt_low}"
 
+    # --- correction signals: synthetic reject counted ---
+    # A dispatch with no verdict but corrected=True should contribute a reject.
+    corr_rec = {
+        "tier": "T0", "prompt_head": "find the bug", "verdict": None,
+        "cost_usd": 0.005, "session_id": "s-corr", "dispatch_id": "d-corr-001",
+    }
+    corr_signals = {
+        ("s-corr", "d-corr-001"): {"corrected": True, "correction_count": 1},
+    }
+    # Without correction signals: no verdict → not counted in approve or reject.
+    cells_no_corr = aggregate([corr_rec])
+    cell_no_corr = cells_no_corr.get(("explore/read", "T0"))
+    assert cell_no_corr is not None, "T0 record should appear in cells"
+    assert cell_no_corr["reject"] == 0, \
+        f"without correction signals, reject must be 0, got {cell_no_corr['reject']}"
+
+    # With correction signals: corrected=True + no verdict → synthetic reject.
+    cells_with_corr = aggregate([corr_rec], correction_signals=corr_signals)
+    cell_with_corr = cells_with_corr.get(("explore/read", "T0"))
+    assert cell_with_corr is not None
+    assert cell_with_corr["reject"] == 1, \
+        f"corrected dispatch must contribute 1 synthetic reject, got {cell_with_corr['reject']}"
+    assert cell_with_corr["correction"] == 1, \
+        f"correction counter must be 1, got {cell_with_corr['correction']}"
+    # approve unchanged
+    assert cell_with_corr["approve"] == 0
+
+    # correction signal does NOT add a reject when the dispatch already has a verdict.
+    corr_rec_with_verdict = dict(corr_rec, verdict="approve")
+    cells_verdict = aggregate([corr_rec_with_verdict], correction_signals=corr_signals)
+    cell_verdict = cells_verdict.get(("explore/read", "T0"))
+    assert cell_verdict["approve"] == 1
+    assert cell_verdict["reject"] == 0, \
+        "corrected dispatch WITH a verdict must not receive an additional synthetic reject"
+
     print("selfcheck OK")
     sys.exit(0)
 
@@ -414,6 +488,16 @@ def main() -> None:
         action="store_true",
         help="Run assert-based self-tests and exit (no files read or written).",
     )
+    parser.add_argument(
+        "--corrections",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Optional correction-signals file from bench/mine-corrections.py "
+            "(default: ~/.claude/bench-correction-signals.jsonl if it exists). "
+            "When provided, corrected dispatches are penalised in the approve-rate."
+        ),
+    )
     args = parser.parse_args()
 
     if args.selfcheck:
@@ -426,10 +510,25 @@ def main() -> None:
         print(f"No records found in {log_path}")
         sys.exit(0)
 
+    # Load correction signals if available.
+    correction_signals = None
+    corrections_path = args.corrections
+    if corrections_path is None:
+        # Auto-detect default location.
+        default_corr = Path(os.path.expanduser("~/.claude/bench-correction-signals.jsonl"))
+        if default_corr.exists():
+            corrections_path = str(default_corr)
+    if corrections_path is not None:
+        mine_mod = _load_mine_corrections()
+        if mine_mod is not None:
+            correction_signals = mine_mod.load_correction_signals(Path(corrections_path))
+            n_corr = sum(1 for s in correction_signals.values() if s.get("corrected"))
+            print(f"Loaded {len(correction_signals)} correction signals ({n_corr} corrected).")
+
     # Counts before TV exclusion (for the header).
     n_total_raw = len(records)
 
-    cells = aggregate(records)
+    cells = aggregate(records, correction_signals=correction_signals)
 
     # n_total: rows that were aggregated (non-TV rows with a tier field).
     n_total = sum(c["n"] for c in cells.values())
