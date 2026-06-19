@@ -47,6 +47,32 @@ _AGENT_ROUTING: dict = {
     "architect": {"tier": "T2", "model": "opus"},
 }
 
+# Derived tier→model map for routing tiers T0/T1/T2 only (TV is a meta-tier, excluded).
+# Built from _AGENT_ROUTING so there is one canonical source; asserts intra-tier consistency.
+def _build_tier_model(routing: dict) -> dict:
+    """Return {tier: model} for routing tiers only (T0/T1/T2).
+
+    Raises AssertionError if two agents share a routing tier but disagree on model.
+    TV (verifier meta-tier) is intentionally excluded.
+    """
+    result: dict = {}
+    for agent, info in routing.items():
+        tier = info["tier"]
+        model = info["model"]
+        if not tier.startswith("T") or tier == "TV":
+            continue  # skip meta-tiers
+        if tier in result:
+            assert result[tier] == model, (
+                f"Intra-tier model conflict for tier={tier!r}: "
+                f"already have model={result[tier]!r}, but agent={agent!r} says {model!r}"
+            )
+        else:
+            result[tier] = model
+    return result
+
+
+TIER_MODEL: dict = _build_tier_model(_AGENT_ROUTING)
+
 _VERDICT_RE = re.compile(r"VERDICT:\s*(APPROVE|REJECT)", re.IGNORECASE)
 
 _DEFAULT_TOKEN_RATES = _TOKEN_RATES["sonnet"]

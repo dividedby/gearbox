@@ -16,6 +16,7 @@ in a throw-away workdir. Never run in CI — it spends real money and bypasses
 permission prompts.
 """
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -25,6 +26,21 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+
+
+def _import_tier_model() -> dict:
+    """Load TIER_MODEL from hooks/scripts/log-routing.py via importlib.
+
+    log-routing.py has a hyphen in its name so it is not directly importable
+    as a Python identifier; importlib.util handles it correctly.
+    """
+    log_routing_path = (
+        Path(__file__).resolve().parent.parent / "hooks" / "scripts" / "log-routing.py"
+    )
+    spec = importlib.util.spec_from_file_location("_log_routing", log_routing_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return dict(mod.TIER_MODEL)
 
 
 # ---------------------------------------------------------------------------
@@ -144,11 +160,9 @@ def model_families(model_usage: dict) -> set:
 
 
 # Maps tier → expected model family for policy-binding checks.
-_TIER_FAMILY: dict = {
-    "T0": "haiku",
-    "T1": "sonnet",
-    "T2": "opus",
-}
+# Derived from log-routing.py TIER_MODEL (the canonical source) so there is
+# no independent literal to keep in sync.
+_TIER_FAMILY: dict = _import_tier_model()
 
 # A forced policy pins every task to one tier regardless of the task's natural
 # tier, so the binding check (and the row's effective tier) must use the FORCED

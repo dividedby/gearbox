@@ -181,6 +181,63 @@ def parse_agent_frontmatters(agents_dir: Path) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Source (D): derived TIER_MODEL exported by log-routing.py
+# ---------------------------------------------------------------------------
+
+def load_tier_model(log_routing_path: Path) -> dict:
+    """Import log-routing.py and return its TIER_MODEL dict.
+
+    TIER_MODEL is derived from _AGENT_ROUTING (routing tiers T0/T1/T2 only);
+    this check asserts that derivation is consistent with what _AGENT_ROUTING
+    itself says (i.e. every routing-tier agent maps to the right model).
+    """
+    spec = importlib.util.spec_from_file_location("_log_routing_mod2", log_routing_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return dict(mod.TIER_MODEL)
+
+
+def compare_tier_model(agent_routing: dict, tier_model: dict) -> list:
+    """Return violations where TIER_MODEL disagrees with _AGENT_ROUTING.
+
+    For every routing-tier (non-TV) agent in agent_routing, check that
+    tier_model[tier] == agent's model.  Also check for tiers present in
+    tier_model but absent from any agent in agent_routing (should not happen
+    if _build_tier_model is correct, but guards future drift).
+    """
+    violations = []
+
+    # Build expected mapping from _AGENT_ROUTING directly.
+    expected: dict = {}
+    for agent, info in agent_routing.items():
+        tier = info["tier"]
+        model = info["model"]
+        if not tier.startswith("T") or tier == "TV":
+            continue
+        expected[tier] = model  # intra-tier consistency already asserted in log-routing.py
+
+    for tier, model in sorted(expected.items()):
+        if tier not in tier_model:
+            violations.append(
+                f"[tier-model-missing] tier={tier!r} present in _AGENT_ROUTING "
+                f"but absent from TIER_MODEL"
+            )
+        elif tier_model[tier] != model:
+            violations.append(
+                f"[tier-model-mismatch] tier={tier!r}: "
+                f"_AGENT_ROUTING says model={model!r} but TIER_MODEL has {tier_model[tier]!r}"
+            )
+
+    for tier in sorted(set(tier_model) - set(expected)):
+        violations.append(
+            f"[tier-model-extra] tier={tier!r} in TIER_MODEL but no routing-tier agent "
+            f"in _AGENT_ROUTING maps to it"
+        )
+
+    return violations
+
+
+# ---------------------------------------------------------------------------
 # Comparison logic
 # ---------------------------------------------------------------------------
 
@@ -362,6 +419,38 @@ def _run_selfcheck() -> None:
     assert any("ghost" in x and "missing-A" in x for x in v9), \
         f"non-exception agent in B but not A must be detected, got: {v9}"
 
+    # ---------------------------------------------------------------------------
+    # compare_tier_model tests
+    # ---------------------------------------------------------------------------
+
+    tm_ok = {"T0": "haiku", "T1": "sonnet", "T2": "opus"}
+
+    # Consistent TIER_MODEL → no violations
+    vt1 = compare_tier_model(b_ok, tm_ok)
+    assert vt1 == [], f"consistent TIER_MODEL must produce no violations, got: {vt1}"
+
+    # TIER_MODEL has wrong model for T1 → detected
+    tm_bad_model = dict(tm_ok, T1="opus")
+    vt2 = compare_tier_model(b_ok, tm_bad_model)
+    assert any("T1" in x and "tier-model-mismatch" in x for x in vt2), \
+        f"TIER_MODEL T1 model mismatch must be detected, got: {vt2}"
+
+    # TIER_MODEL missing a routing tier → detected
+    tm_missing = {k: v for k, v in tm_ok.items() if k != "T2"}
+    vt3 = compare_tier_model(b_ok, tm_missing)
+    assert any("T2" in x and "tier-model-missing" in x for x in vt3), \
+        f"TIER_MODEL missing T2 must be detected, got: {vt3}"
+
+    # TIER_MODEL has an extra tier not in _AGENT_ROUTING → detected
+    tm_extra = dict(tm_ok, T3="haiku")
+    vt4 = compare_tier_model(b_ok, tm_extra)
+    assert any("T3" in x and "tier-model-extra" in x for x in vt4), \
+        f"TIER_MODEL extra tier T3 must be detected, got: {vt4}"
+
+    # verifier (TV) must not appear in TIER_MODEL violations even when present in b_ok
+    assert not any("verifier" in x for x in vt1), \
+        f"verifier must not appear in TIER_MODEL violations, got: {vt1}"
+
     print("selfcheck OK")
     sys.exit(0)
 
@@ -380,8 +469,10 @@ def run_real_check() -> None:
     routing_md = parse_routing_md(routing_md_path)
     agent_routing = parse_agent_routing(log_routing_path)
     frontmatters = parse_agent_frontmatters(agents_dir)
+    tier_model = load_tier_model(log_routing_path)
 
     violations = compare(routing_md, agent_routing, frontmatters)
+    violations += compare_tier_model(agent_routing, tier_model)
 
     if violations:
         print("CONSISTENCY VIOLATIONS FOUND:")

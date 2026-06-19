@@ -10,6 +10,7 @@ needed.  Only T0/T1/T2 task rows are scored; TV (verifier) and (unknown) rows
 are excluded from all baseline and router totals.
 """
 import argparse
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -22,6 +23,15 @@ if _hooks_scripts not in sys.path:
 from rates import BLENDED_RATES as _BLENDED_RATES
 
 
+def _import_log_routing():
+    """Load log-routing.py via importlib (hyphen prevents direct import)."""
+    path = Path(__file__).resolve().parent.parent / "hooks" / "scripts" / "log-routing.py"
+    spec = importlib.util.spec_from_file_location("_log_routing", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -29,10 +39,11 @@ from rates import BLENDED_RATES as _BLENDED_RATES
 # Ordered routing tiers and their blended rates.  Order matters for
 # escalate-on-fail: a T1 row pays T0 + T1; a T2 row pays T0 + T1 + T2.
 TASK_TIERS = ["T0", "T1", "T2"]
+# Derived from log-routing.py TIER_MODEL (the canonical tier→model source)
+# so there is no independent literal to keep in sync.
 _TIER_RATES: dict = {
-    "T0": _BLENDED_RATES["haiku"],
-    "T1": _BLENDED_RATES["sonnet"],
-    "T2": _BLENDED_RATES["opus"],
+    tier: _BLENDED_RATES[model]
+    for tier, model in _import_log_routing().TIER_MODEL.items()
 }
 
 
