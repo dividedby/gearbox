@@ -6,6 +6,15 @@ issues/epics, not here — see the [open epics](https://github.com/dividedby/gea
 Versions before full divergence (2026-06-18) were also mirrored upstream as PRs
 (#10–#24); upstream never engaged, so mirroring stopped. See `docs/adr/0002-full-divergence.md`.
 
+## [Unreleased] — 2026-06-19 · Inject-routing not-found diagnostic (#20, epic #6)
+- **#20** `inject-routing.py` now emits a one-line stderr diagnostic when neither
+  the project-local nor the plugin copy of `routing.md` is found, naming the likely
+  cause (`CLAUDE_PLUGIN_ROOT` unset or missing) and listing the two paths checked.
+  Fail-open is preserved: the hook exits cleanly (code 0) and writes nothing to
+  stdout, so no session is ever blocked. `_selfcheck` extended with a subprocess
+  round-trip that asserts the diagnostic fires, stderr content, zero exit code, and
+  empty stdout on the not-found path.
+
 ## [Unreleased] — 2026-06-19 · Benchmark dedup (#18, epic #6)
 - **#18** `run-live.py` now skips `(task_id, policy)` pairs already present in
   `bench/training-data.jsonl` before running — mirrors `label.py`'s
