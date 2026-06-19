@@ -1,0 +1,227 @@
+# Gearbox: tracking notes
+
+**Upstream:** https://github.com/Adityaraj0421/gearbox  
+**Our fork:** https://github.com/dividedby/gearbox (fork `main` at v0.7.1 — all filed issues + post-install fixes + 2026-06-15 audit hardening + v0.2.0 Integrity & CI and v0.3.0 Observability & data-quality milestones + v0.3.1 CodeRabbit review-fix patch + v0.4.0 learned-router milestone (a static win-rate routing prior) + v0.5.0 Credibility milestone (exact per-component token cost + modeled baseline scorecard) + v0.6.0 Control milestone: cost/quality aggressiveness knob + opt-in weighted-token budget caps + measured counterfactual benchmark (R1-live) & cost-ledger summary line (R3) + v0.6.1 orchestrator context-hygiene routing rule (R32, partial) + v0.6.2 doctor CHECK 8 plugin-root fix + v0.7.0 Visibility milestone: status-line segment + richer dashboard + SessionEnd session summaries + explicit escalation logging + v0.7.1 status-line savings reframe (segment shows estimated savings vs an all-Opus baseline, money/weighted-token toggle) + doctor CHECK 6 Step-C fix)  
+**Installed:** 2026-06-17, user scope, **v0.7.1** (fork) — reinstalled this session (`/plugin` update + `/reload-plugins`); CHECK 8 confirms installed == latest (0.7.1).  
+**Doctor status:** fork **v0.7.1** ran 2026-06-17 — **all 11 checks PASS (healthy)**. CHECK 6 live dispatch logged with exact per-component cost and confirms the Step-C `p.open()` fix (no more `TypeError`); CHECK 8 installed == latest (0.7.1); CHECK 9 routing-prior artifact present; CHECK 10 status-line segment self-checks OK but reports `NOT_WIRED` — the check greps `settings.json`, which references our `statusline.sh` wrapper, so it can't see the segment composed one level down (wiring is effectively present and live).  
+**Audit & roadmap:** [docs/audit-2026-06-15.md](docs/audit-2026-06-15.md) (full-surface audit, unified backlog G1–G33) + [docs/roadmap.md](docs/roadmap.md) (shipped v0.1.8→v0.7.1 + forward ladder v0.8.0→v2.0.0, refreshed 2026-06-17)
+
+## Fork
+
+Upstream went quiet with our 9 issues unanswered (single maintainer, repo days old).
+Decision (2026-06-14): fork to `dividedby/gearbox`, implement all 9, run our install
+off the fork, and mirror each change upstream as a PR in case the maintainer returns.
+
+- Fork `main` carries all 9 fixes (merge-commit only, per our branching policy) + a
+  version bump to **0.1.4**. Each fix landed on a `feature/*` branch and was reviewed
+  (5 of 7 via `gearbox:verifier`; the two mechanical edits — #1, #2 — lead self-checked)
+  before merge.
+- 7 upstream PRs opened (one per theme): #10–#16. See the table below.
+- Post-install fixes (v0.1.5), found while validating the fork via `/gearbox:doctor`:
+  - **#17** (upstream PR) — pinned the real Task `tool_response` usage keys
+    (`totalTokens` / `totalToolUseCount` / `totalDurationMs`; captured from the session
+    transcript), so `num_turns`/`duration_ms` stop logging null; also fixed a
+    falsy-coalescing bug that dropped a legitimate `0`. Confirmed: no cost field exists
+    in `tool_response`, so cost stays estimated.
+  - **#18** (upstream PR) — doctor CHECK 8 freshness now derives the source repo from
+    the manifest `repository` field instead of a hardcoded upstream URL.
+  - Fork-only: set `plugin.json` `repository` → `dividedby/gearbox` (so #18's freshness
+    check tracks the fork) + version bump to 0.1.5. Not mirrored upstream.
+- Post-install fixes (v0.1.6), from the 2026-06-15 maintenance/insights pass:
+  - **#20** (upstream PR [#21](https://github.com/Adityaraj0421/gearbox/pull/21)) — scout
+    reliability: counts must be command-derived and quoted, the ref read is pinned and
+    reported, findings tagged CONFIRMED/INFERRED/NOT-FOUND; `routing.md` adds a "scout
+    results are recon, not ground truth" rule (a count/answer gating a mutation is
+    re-verified by the orchestrator; a surprising or empty result gets a second look).
+  - **#22** (upstream PR [#23](https://github.com/Adityaraj0421/gearbox/pull/23)) —
+    `log-routing.py` now records resolved `model` (passed > derived-from-tier > absent,
+    with a `model_source` provenance field), `tier`, and the verifier `verdict`
+    (approve/reject) — the reward signal the v0.3.0 learned router needs. Fixes the large
+    share of entries that logged `model = "(not passed)"` because the Task call omitted
+    the param.
+  - Fork-only: version bump to 0.1.6. Not mirrored upstream.
+- Post-install fixes (v0.1.7), from reviewing CodeRabbit comments on our upstream
+  PRs (2026-06-15). Most PR comments were CodeRabbit rate-limit notices — the org's
+  prepaid credits are exhausted, so 10 of 12 open PRs got no bot review; only #10
+  (clean) and #21 (cumulative diff) were reviewed. Two legitimate findings, fixed by
+  amending the originating feature branches (which updates their PRs):
+  - PR [#16](https://github.com/Adityaraj0421/gearbox/pull/16) (`bench/label.py`) —
+    `_record_id` hashed only `ts|session_id|prompt_head`; added the delegation
+    discriminators (`tool_name`/`subagent_type`/`model`) so two distinct delegations
+    sharing those values can't collide and silently drop one during resumable dedup.
+  - PR [#17](https://github.com/Adityaraj0421/gearbox/pull/17) (`log-routing.py`) —
+    derive `total_tokens` by summing split `usage.input_tokens`/`output_tokens` when
+    no aggregate token field is present, so `cost_usd` can still be estimated.
+  - Fork-only: version bump to 0.1.7. Not mirrored upstream.
+- Post-install fixes (v0.1.8), from the 2026-06-15 full-surface audit
+  ([docs/audit-2026-06-15.md](docs/audit-2026-06-15.md)). Four atomic `feature/*`
+  branches + version bump on fork `main`; all selfchecks green; installed and
+  doctor-green (all 9 checks PASS, 2026-06-15):
+  - **G1** (security, `feature/log-privacy`): `prompt_head` is secret-scrubbed
+    before write and `bench/training-data.jsonl` is gitignored — a credential in a
+    delegation prompt can no longer reach a committable file.
+  - **G2–G18** (`feature/log-hardening`): per-dispatch `uid` so parallel identical
+    delegations don't collide and get deduped; log dir from `CLAUDE_PROJECT_DIR`;
+    split-usage tokens summed when only one side present; `bool` rejected as a
+    token count; verifier logged as tier `TV` not `T0`; metric extraction trimmed
+    to confirmed keys; dead string-`tool_response` parse path deleted.
+  - **G6/G7** (`feature/cmd-guards`): `/gearbox:init` guards an unset
+    `CLAUDE_PLUGIN_ROOT`; doctor CHECK 7 uses `grep -F`.
+  - **G9/G10/G13/G14** (`feature/routing-spec-clarify`): verifier verdict-line
+    wording aligned with the scan-anywhere reader; verifier trigger uses the T1/T2
+    abstraction; routing rule 2 routes on max-across-dimensions; rule 3 defines
+    "design problem".
+  - Resolved without code change: **G16** (`Explore` is a valid fallback subagent
+    type), **G12** (manifest `author` stays upstream's per minimal-divergence).
+  - Fork-only: version bump to 0.1.8. Audit items G15/G19–G31 are deferred to the
+    v0.2.0+ roadmap ([docs/roadmap.md](docs/roadmap.md)).
+- v0.2.0 (Integrity & CI milestone, 2026-06-15) — five items across atomic
+  `feature/*` branches + version bump on fork `main`; CI green, all four selfchecks
+  pass, doctor all-9-PASS on the v0.2.0 install:
+  - **G21** (`feature/baseline-capture`): a PreToolUse hook (`capture-baseline.py`)
+    auto-captures `git status --short` to `.claude/gearbox-baseline.txt` before T1/T2
+    implementer dispatches; the verifier reads it (file-based — a PreToolUse hook
+    can't inject into the spawned subagent), removing the manual capture step.
+  - **G19/G20** (`feature/ci`): first standing automation — GitHub Actions runs the
+    selfchecks + JSON manifest validation + a spec-vs-code consistency test
+    (`bench/check_consistency.py`) that fails on drift between the `routing.md` tier
+    table, `_AGENT_ROUTING`, and agent `model:` frontmatter.
+  - **G22/G15** (`feature/spec-clarify`): documented the architect→builder execution
+    handoff (read-only architect → orchestrator routes execution to builder),
+    distinct from the circuit breaker; gated the ultrathink advice after verifying
+    thinking doesn't cross the Task boundary.
+  - Mirrored upstream in the ongoing sync PR #24; fork-only `repository`/version
+    pinned to upstream values there.
+- Sync cadence: when upstream moves, merge `upstream/main` into fork `main`
+  (merge-commit, per our merge-commit-only policy — never rebase pushed `main`),
+  keeping our unmerged fixes on top. If a PR merges upstream, drop our copy on the
+  next sync. The fork-only `repository`/version lines are the expected permanent
+  divergence.
+
+## What it does
+
+5-agent tiered routing system that injects a routing policy at SessionStart and escalates automatically:
+
+| Tier | Agent              | Model  | Use for |
+|------|--------------------|--------|---------|
+| T0   | gearbox:scout      | haiku  | exploration, search, reading, summarising |
+| T0   | gearbox:grunt      | haiku  | mechanical edits, 1-2 files, zero design decisions |
+| T1   | gearbox:builder    | sonnet | features, bug fixes, tests, refactors ≤5 files |
+| T2   | gearbox:architect  | opus   | cross-cutting design, concurrency, migrations, security, perf |
+| —    | gearbox:verifier   | haiku  | independent review after every T1/T2 that edits files |
+
+Routing policy is injected via SessionStart hook (~2.5KB of context). Delegations are logged to `.claude/gearbox-log.jsonl` in each project.
+
+## How we integrated it
+
+- Removed `~/.claude/agents/researcher.md` and `implementer.md` (superseded by scout/builder)
+- Removed `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` from settings.json (premature)
+- Trimmed CLAUDE.md Delegation section — tier selection now deferred to gearbox
+- Updated Backpressure section — verifier handles post-delegation review
+- Status line: the gearbox savings segment is composed into our `statusline.sh` wrapper (`~/.claude/statusline` symlinks to repo `statusline/`), defaulting to token-weighted savings (`GEARBOX_STATUSLINE_UNIT`; export `=usd` for dollars). Plugins can't own the main `statusLine` and `settings.json` `env` doesn't reach the statusLine subprocess, so the unit is set at the wrapper's invocation.
+
+## Issues we filed
+
+All 11 implemented in the fork. We have since **closed all 11 issues and the per-theme
+PRs #10–#23** (the maintainer never responded) and now offer everything upstream
+through the single ongoing sync PR [#24](https://github.com/Adityaraj0421/gearbox/pull/24)
+(per the one-PR policy in `CLAUDE.md`). We no longer file upstream issues. The table
+below is historical record.
+
+| # | Title | Status |
+|---|-------|--------|
+| [#1](https://github.com/Adityaraj0421/gearbox/issues/1) | doctor: CHECK 7 should scan ~/.claude/agents/ for user-level agent conflicts | fork ✓ · PR [#10](https://github.com/Adityaraj0421/gearbox/pull/10) open |
+| [#2](https://github.com/Adityaraj0421/gearbox/issues/2) | docs: add integration guide for existing CLAUDE.md delegation rules | fork ✓ · PR [#11](https://github.com/Adityaraj0421/gearbox/pull/11) open |
+| [#3](https://github.com/Adityaraj0421/gearbox/issues/3) | routing: add circuit breaker after T2 failure — escalation ladder has no stop condition | fork ✓ · PR [#12](https://github.com/Adityaraj0421/gearbox/pull/12) open |
+| [#4](https://github.com/Adityaraj0421/gearbox/issues/4) | verifier: clarify scope policy for formatting-only changes in declared file set | fork ✓ · PR [#13](https://github.com/Adityaraj0421/gearbox/pull/13) open |
+| [#5](https://github.com/Adityaraj0421/gearbox/issues/5) | feat(log): enrich gearbox-log.jsonl with post-completion metrics (cost, turns, tokens) | fork ✓ · PR [#15](https://github.com/Adityaraj0421/gearbox/pull/15) open |
+| [#6](https://github.com/Adityaraj0421/gearbox/issues/6) | bench: add outcome-labeling runner to collect training data for v0.3.0 learned router (depends on #5) | fork ✓ · PR [#16](https://github.com/Adityaraj0421/gearbox/pull/16) open |
+| [#7](https://github.com/Adityaraj0421/gearbox/issues/7) | scout: grant read-only Bash for gh/git/log recon | fork ✓ · PR [#14](https://github.com/Adityaraj0421/gearbox/pull/14) open |
+| [#8](https://github.com/Adityaraj0421/gearbox/issues/8) | verifier: flag masked failures (success:false / unchecked exit codes) | fork ✓ · PR [#13](https://github.com/Adityaraj0421/gearbox/pull/13) open |
+| [#9](https://github.com/Adityaraj0421/gearbox/issues/9) | builder/grunt: update config before deleting referenced files (avoid self-lockout) | fork ✓ · PR [#14](https://github.com/Adityaraj0421/gearbox/pull/14) open |
+| [#20](https://github.com/Adityaraj0421/gearbox/issues/20) | scout: require command-derived counts, ref pinning, and confidence tags | fork ✓ · PR [#21](https://github.com/Adityaraj0421/gearbox/pull/21) open |
+| [#22](https://github.com/Adityaraj0421/gearbox/issues/22) | feat(log): record resolved model, tier, and verifier verdict for reward signal | fork ✓ · PR [#23](https://github.com/Adityaraj0421/gearbox/pull/23) open |
+
+## Roadmap
+
+Fork-driven (upstream is dormant — latest upstream release v0.1.2, our sync PR
+[#24](https://github.com/Adityaraj0421/gearbox/pull/24) untouched by the
+maintainer). Full detail, rationale, and source tags (`[PA]` prior-art / `[CC]`
+Claude Code features / `[KB]` agent-research) live in
+[docs/roadmap.md](docs/roadmap.md), refreshed by the 2026-06-16 reassessment.
+
+**Shipped:** v0.2.0 Integrity & CI (G19–G22) · v0.3.0 Observability (G23–G26) ·
+v0.4.0 *static win-rate prior* — the advisory `{task-class × tier}` table only;
+the full learned router (G27) and transcript mining (G32) did **not** ship and are
+carried forward · v0.5.0 Credibility — exact per-component token cost (R2) + a
+*modeled* baseline scorecard (R1) · v0.6.0 Control — cost/quality aggressiveness
+knob (R6) + opt-in weighted-token budget caps & threshold warnings (R4/R5) + the
+*measured* counterfactual benchmark (R1-live, `bench/run-live.py`) & its cost-ledger
+summary line (R3) — the last two initially paused, shipped 2026-06-17 · v0.6.1
+*orchestrator context hygiene* — routing rule 11 (the runtime-free half of R32): a
+proactive intentional-compaction checkpoint between dispatch batches, dropping
+verbose agent reports already persisted to the routing log before the harness's
+forced lossy auto-compact (2026-06-17) · v0.6.2 *doctor CHECK 8 fix* — version
+freshness now resolves the plugin root from the substituted `${CLAUDE_PLUGIN_ROOT}`
+token (argv, like CHECK 0) instead of `os.environ`, which the command shell
+doesn't carry; it was silently checking the upstream repo's version, not the
+fork's (2026-06-17). · v0.7.0 *Visibility* — a composable status-line segment (`bench/statusline.py`; plugins can't own the main `statusLine`, so it's wired into the user's own settings.json), a richer `bench/dashboard.py` (escalation rate, cost-over-time, prior-vs-actual tier mix), a `SessionEnd` hook writing per-session summaries to a separate `~/.claude/gearbox-sessions.jsonl`, and explicit escalation logging (`[gearbox-escalation]` marker → `escalation` log field) (2026-06-17). · v0.7.1 *status-line savings reframe* — the segment now prints `gearbox saved $0.43` (estimated savings vs an all-Opus counterfactual, re-pricing each session dispatch's token split at the top-tier rates pinned in `log-routing.py`) instead of raw spend + a role/count breakdown; `GEARBOX_STATUSLINE_UNIT=usd|tokens` toggles money vs Haiku-equivalent weighted tokens. Also a doctor CHECK 6 Step-C fix (the log-recount snippet iterated the `Path` instead of `p.open()`, raising `TypeError`) (2026-06-17).
+
+**Forward ladder (v0.8.0 → v2.0.0):** the prior-art verdict sets the spine — make
+the routing credible, controllable, visible, efficient, then self-improving on the
+graded-verifier signal only gearbox has, before earning 1.0 and climbing to a real
+learned router.
+
+| Milestone | Theme | Headline |
+|-----------|-------|----------|
+| ✅ **v0.7.0** | **Visibility** | **Spend/analytics dashboard + status line + session accounting** |
+| v0.8.0 | Efficiency | Prompt-cache-aware routing (cache the static policy; factor cache into tier math) |
+| v0.9.0 | Graded reward | Verifier emits a score (the moat) + transcript negative signal (G32) |
+| v1.0.0 | Adoption bar | Semver tags/CHANGELOG (G28), tool-scoped agents, declarative routing spec, moat doc (G31) |
+| v1.2.0 | Learned router | Embedding/LLM classifier over telemetry (G27), gated on the v0.5.0 harness |
+| v1.4.0 | Calibration | Threshold tuning + A/B experiments + per-project tables + benchmark task-set hardening (R29–R31) |
+| v1.6.0 | Parallelism | Map-reduce fan-out + smart-zone context budgeting (per-agent **and** orchestrator-self, R32 — rule shipped 0.6.1) |
+| v1.8.0 | Ecosystem | Gearbox MCP server + OpenTelemetry export + scheduled prior + provider hedge (G29) |
+| v2.0.0 | Moonshot | Safe online self-improvement (G33) behind eval gate + HITL + rollback |
+
+## Known limitations (fork v0.7.1)
+
+- ~~Dirty-file false rejects: verifier needs a BASELINE snapshot; if omitted, pre-existing uncommitted changes may trigger false REJECTs.~~ — fixed in fork v0.2.0 (G21): a PreToolUse hook auto-captures the BASELINE to `.claude/gearbox-baseline.txt` before T1/T2 dispatches and the verifier reads it.
+- ~~Doctor CHECK 8 (version freshness) read `CLAUDE_PLUGIN_ROOT` from `os.environ` inside its python subprocess, but the command's shell doesn't carry that env var — root came back empty and Step B silently compared the installed version against the *upstream* repo instead of the fork's manifest.~~ — fixed in fork v0.6.2: the substituted `${CLAUDE_PLUGIN_ROOT}` token (the same resolution CHECK 0 uses) is passed as `argv[1]`, so version + repository read from the real installed manifest; empty argv still degrades to `NO_PLUGIN_ROOT`.
+- ~~Doctor CHECK 6 Step-C (live-dispatch log recount) iterated the `Path` object (`for l in p`) instead of the open file, raising `TypeError` when the check ran.~~ — fixed in fork v0.7.1: the snippet now iterates `p.open()`, matching Step A.
+- Agents only load at session start — editing agent files mid-session has no effect until restart. (Inherent Claude Code constraint; documented, not on the roadmap ladder.)
+- ~~`ultrathink` in T2 prompts is experimental; propagation to subagents unverified.~~ — resolved in fork v0.2.0 (G15): verified that thinking does not cross the Task boundary, so the advice was removed; tier/model selection (architect = opus) is the lever.
+- SessionStart hook injection may vary across Claude Code surfaces. — roadmap: **v1.0.0** (G30, cross-surface injection robustness).
+- Must reference agents by full names: `gearbox:scout`, `gearbox:grunt`, etc.
+- ~~No stop condition after T2 failure (issue #3)~~ — fixed in fork (circuit breaker terminates the ladder at T2).
+- ~~Secret-leakage path (audit G1)~~ — fixed in fork v0.1.8: `prompt_head` is secret-scrubbed at write time (PEM keys, AWS ids, secret-like `key=value`, long tokens) and `bench/training-data.jsonl` is gitignored.
+- ~~`cost_usd` in the log is always estimated (`cost_estimated: true`)~~ — **fixed in fork v0.5.0 (R2):** the logger reads the real `tool_response.usage` split (`input_tokens` / `output_tokens` / `cache_read_input_tokens` / `cache_creation_input_tokens`, with a 5m/1h cache-write sub-breakdown — confirmed against live session transcripts) and computes **exact** per-component cost. The four new fields are logged; `cost_estimated` is now `false` whenever the split is present, falling back to the (re-pinned) blended estimate only for split-less payloads. `bench/eval.py` consumes the exact router cost against three re-pinned modeled baselines.
+- ~~The benchmark baselines are **modeled**, not measured~~ — **measured counterfactual shipped in fork v0.6.0 (R1-live):** `bench/run-live.py` re-runs the fixed task set under each policy via headless `claude -p`, forcing each baseline with R6's forced-tier profiles (always-Opus via an edit-capable `always-opus-build` builder@opus profile, since `always-t2` routes to the read-only architect) on a committed `bench/fixtures/toy-cli/` fixture, and captures **real per-policy cost (R2) + a deterministic acceptability grade** into `bench/training-data.jsonl` — a measured cost-at-equal-acceptability comparison, not an assumed-equal one. The benchmark is local-maintainer-only (spends real money, `bypassPermissions`); CI runs only its offline `--selfcheck`. `bench/training-data.jsonl` is gitignored and **populated on demand by a local pass** (no longer "stays empty"). The three named `eval.py` baselines (always-Sonnet / always-Opus / escalate-on-fail) remain *modeled* token-rate projections — the right place for escalate-on-fail, a counterfactual you can't run live since the live router already escalates.
+- The routing prior (v0.4.0) is reward-sparse: the `{task-class × tier}` prior only earns a recommendation where verifier verdicts exist (T1/T2 edits), so early on most cells are `low-n` and unrecommended (first real run: 47 dispatches, only 3 with a verdict). It sharpens as the log accumulates verdicts; until then it mostly confirms the cheap-tier defaults. — roadmap: **v0.9.0** (R13 graded-verifier reward + R14/G32 transcript negative signal) densify it; **v1.2.0** (G27) replaces the keyword classifier.
+
+## How to switch our install to the fork (one-time)
+
+Run inside a Claude Code session (these are `/plugin` UI actions, not shell):
+
+```text
+/plugin marketplace remove gearbox
+/plugin marketplace add dividedby/gearbox
+/plugin install gearbox@gearbox
+```
+Restart the session, then `/gearbox:doctor` to confirm all checks pass. Because the
+fork marketplace keeps `autoUpdate`, future fork-`main` changes flow in automatically.
+
+## How to update (already on the fork)
+
+Fork `main` auto-updates. To force it: `/plugin install gearbox@gearbox`, restart,
+`/gearbox:doctor`.
+
+## How to check issue status
+
+```bash
+gh issue list --repo Adityaraj0421/gearbox --json number,title,state --jq '.[] | [.number, .state, .title] | @tsv'
+```
+
+## Project-local customisation
+
+Run `/gearbox:init` in any project to create `.claude/routing.md` — a copy of the routing policy you can extend with project-specific hard floors (e.g. "never delegate auth changes below T2"). The SessionStart hook prefers the local copy over the plugin default.
