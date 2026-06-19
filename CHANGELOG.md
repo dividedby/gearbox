@@ -6,101 +6,51 @@ issues/epics, not here — see the [open epics](https://github.com/dividedby/gea
 Versions before full divergence (2026-06-18) were also mirrored upstream as PRs
 (#10–#24); upstream never engaged, so mirroring stopped. See `docs/adr/0002-full-divergence.md`.
 
-## [Unreleased] — 2026-06-19 · Canonical tier→model map (#23, epic #7)
+## [0.7.2] — 2026-06-19 · Single source of truth & internal cleanup (epics #6, #7)
 
-### Changed
-- **#23** `hooks/scripts/log-routing.py`: derives and exports `TIER_MODEL`
-  (`{"T0": "haiku", "T1": "sonnet", "T2": "opus"}`) from `_AGENT_ROUTING` at
-  module load. Asserts intra-tier consistency (two agents on the same tier must
-  agree on model). TV (verifier meta-tier) is excluded.
-- **#23** `bench/run-live.py`: `_TIER_FAMILY` now loaded from `TIER_MODEL` via
-  importlib; independent literal removed.
-- **#23** `bench/eval.py`: `_TIER_RATES` now derived as
-  `BLENDED_RATES[TIER_MODEL[tier]]` for each routing tier; independent literal removed.
-- **#23** `bench/check_consistency.py`: `compare_tier_model()` + `load_tier_model()`
-  added; `run_real_check()` and `--selfcheck` now assert `TIER_MODEL` matches
-  `_AGENT_ROUTING`. Zero behavior change; all numeric values identical.
+Internal hardening only — refactors, a concurrency fix, and docs. No user-facing
+behavior change; all numeric values identical before and after.
 
-## [Unreleased] — 2026-06-19 · Single rates module (#22, epic #7)
-
-### Added
+### Single source of truth (epic #7)
 - **#22** `hooks/scripts/rates.py` — single source of truth for the model rate
-  card. Exposes `TOKEN_RATES` (per-component USD/M), `BLENDED_RATES` (fallback
-  blended USD/M), and `HAIKU_REF` (weighted-token denominator). Rate card
-  confirmed 2026-06-19. `--selfcheck` pins all expected current values.
+  card: `TOKEN_RATES` (per-component USD/M), `BLENDED_RATES` (fallback blended
+  USD/M), and `HAIKU_REF` (weighted-token denominator, kept as an independent
+  tunable rather than derived from the input rate). Dated, `--selfcheck`-pinned,
+  CI-gated. `log-routing.py`, `budget_common.py`, `bench/statusline.py`, and
+  `bench/eval.py` now import it instead of declaring rates locally; cross-reference
+  sync comments removed.
+- **#23** Canonical `TIER_MODEL` (`{"T0": "haiku", "T1": "sonnet", "T2": "opus"}`)
+  derived from `_AGENT_ROUTING` in `log-routing.py` at module load — asserts
+  intra-tier consistency and excludes the TV (verifier) meta-tier. `bench/run-live.py`
+  `_TIER_FAMILY` and `bench/eval.py` `_TIER_RATES` now derive from it; a shared
+  `hooks/scripts/routing_loader.py` replaces three duplicate importlib helpers;
+  `check_consistency.py` gained a `compare_tier_model()` gate (non-vacuous
+  selfcheck covering wrong/missing/extra tier and TV exclusion).
+- **#41** `bench/tasks.md` blended-rate prose now points at the `BLENDED_RATES`
+  card in `rates.py` instead of restating the numbers.
 
-### Changed
-- **#22** `hooks/scripts/log-routing.py`, `hooks/scripts/budget_common.py`,
-  `bench/statusline.py`, and `bench/eval.py` now import rate constants from
-  `rates.py` instead of declaring them locally. Cross-reference sync comments
-  (ponytail: re-pin together) removed. Zero behavior change; all numeric values
-  are identical.
-- CI: added `python3 hooks/scripts/rates.py --selfcheck` step.
-
-## [Unreleased] — 2026-06-19 · Remove session-summary seam (#21, epic #6)
-
-### Removed
-- **#21** `hooks/scripts/session-summary.py` and its `SessionEnd` hook registration
-  removed. The script wrote per-session rollup records to `~/.claude/gearbox-sessions.jsonl`,
-  but that file had zero consumers — ~95% of its data is re-derivable from
-  `gearbox-log.jsonl`, and the only unique datum (`reason`) was judged not worth the
-  maintenance cost. The `SessionEnd` block in `hooks/hooks.json` is removed entirely
-  (session-summary was its sole entry). Any existing `~/.claude/gearbox-sessions.jsonl`
-  file is no longer written; users may delete it at their discretion.
-
-## [Unreleased] — 2026-06-19 · task_cap documented as warn-only by design (#19, epic #6)
-- **#19** Clarified in-place that `task_cap` is **warn-only by design** and never
-  blocks dispatches. `budget-warn.py` docstring now leads with an explicit
-  "WARN-ONLY BY DESIGN" callout explaining why pre-dispatch enforcement is not
-  possible (cost unknowable before a dispatch runs). `enforce-budget.py` docstring
-  updated to explicitly name `task_cap` and redirect to `budget-warn.py`.
-  `budget_common.py` `resolve_budget_config` docstring now documents both cap
-  semantics side-by-side; `is_active` clarified that `task_cap` does not enable
-  blocking. `README.md` Budget caps section now labels `session_cap` as
-  **blocking** and `task_cap` as **warn-only, never blocks**, with guidance to use
-  `session_cap` for hard enforcement. Version history blurb for 0.6.0 corrected
-  ("per-task warn-only threshold" replaces "per-task ceilings").
-  No enforcement behavior changed; no code logic touched.
-
-## [Unreleased] — 2026-06-19 · Inject-routing not-found diagnostic (#20, epic #6)
-- **#20** `inject-routing.py` now emits a one-line stderr diagnostic when neither
-  the project-local nor the plugin copy of `routing.md` is found, naming the likely
-  cause (`CLAUDE_PLUGIN_ROOT` unset or missing) and listing the two paths checked.
-  Fail-open is preserved: the hook exits cleanly (code 0) and writes nothing to
-  stdout, so no session is ever blocked. `_selfcheck` extended with a subprocess
-  round-trip that asserts the diagnostic fires, stderr content, zero exit code, and
-  empty stdout on the not-found path.
-
-## [Unreleased] — 2026-06-19 · Benchmark dedup (#18, epic #6)
-- **#18** `run-live.py` now skips `(task_id, policy)` pairs already present in
-  `bench/training-data.jsonl` before running — mirrors `label.py`'s
-  `load_labeled_keys()`. New `load_existing_keys()` loads the set from the output
-  file; within a single run the in-memory set is updated after each write so
-  within-run duplicates are also prevented. The skip is logged to stdout.
-  `--selfcheck` extended with a round-trip test (existing pair skipped, new pair
-  runs, malformed/incomplete rows silently ignored, missing file → empty set).
-  `eval.py` not touched: the warning would be noise once the source is fixed.
-
-## [Unreleased] — 2026-06-19 · Concurrency fix (#16, epic #6)
-- **#16** Opt-in baseline keying via orchestrator-minted token: `capture-baseline.py`
-  always writes `.claude/gearbox-baseline.txt` (legacy, preserving today's behavior
-  for sequential dispatches). When the orchestrator embeds `[gearbox-baseline-id=<id>]`
-  in an implementer's Task prompt (parallel path only), the hook also writes
-  `.claude/gearbox-baseline-<id>.txt`. The orchestrator mints the token itself —
-  `tool_use_id` is not available at dispatch time and must not be used.
-- Stale keyed baseline files (>1 hour) are cleaned up on each write; legacy file
-  is never touched by cleanup.
-- `routing.md` rule 9 updated: sequential path documented (no orchestrator action
-  needed); parallel path documented (orchestrator mints baseline_id, embeds in
-  implementer prompt, passes same id to verifier). Explicit note that `tool_use_id`
-  is NOT available to the orchestrator.
-- `agents/verifier.md` updated: baseline selection priority (keyed by baseline_id →
-  legacy → prompt BASELINE → missing-note); note that missing token under concurrency
-  means the legacy baseline may be stale.
-- `capture-baseline.py --selfcheck` rewritten: extract_baseline_id (present / absent /
-  malformed / empty marker), build_body header (id present/absent), integration
-  (with token → both files exist; without token → only legacy, keyed glob empty),
-  and cleanup behavior.
+### Seam cleanup & fixes (epic #6)
+- **#16** Concurrency fix — opt-in baseline keying via an orchestrator-minted
+  `[gearbox-baseline-id=<id>]` token. `capture-baseline.py` still writes the legacy
+  `.claude/gearbox-baseline.txt` (sequential behavior unchanged) and additionally
+  writes `.claude/gearbox-baseline-<id>.txt` on the parallel path; stale keyed files
+  (>1h) cleaned on write, legacy file untouched. `routing.md` rule 9 and
+  `agents/verifier.md` document the sequential/parallel paths and that `tool_use_id`
+  is unavailable at dispatch time. `--selfcheck` rewritten.
+- **#18** `run-live.py` skips `(task_id, policy)` pairs already present in
+  `bench/training-data.jsonl` (and within-run duplicates), mirroring `label.py`'s
+  `load_labeled_keys()`; skips logged to stdout. `--selfcheck` extended.
+- **#20** `inject-routing.py` emits a one-line stderr diagnostic when neither
+  `routing.md` copy is found (names the likely `CLAUDE_PLUGIN_ROOT` cause, lists the
+  two paths checked); fail-open preserved (exit 0, empty stdout). `_selfcheck` extended.
+- **#19** Documented `task_cap` as **warn-only by design** (never blocks dispatches):
+  docstrings in `budget-warn.py`, `enforce-budget.py`, and `budget_common.py`, plus
+  the `README.md` Budget caps section, now state `session_cap` blocks and `task_cap`
+  warns. No enforcement behavior changed; no code logic touched.
+- **#21** Removed the unconsumed `session-summary.py` seam and its `SessionEnd` hook
+  registration — `~/.claude/gearbox-sessions.jsonl` had zero consumers and was ~95%
+  re-derivable from `gearbox-log.jsonl`. Any existing file is no longer written; users
+  may delete it at their discretion.
 
 ## [0.7.1] — 2026-06-17 · Visibility (point)
 - Status-line segment reframed to show **estimated savings vs an all-Opus baseline**
