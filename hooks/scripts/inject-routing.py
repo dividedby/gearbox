@@ -104,6 +104,12 @@ def main() -> None:
     routing_file = next((p for p in candidates if p.exists()), None)
 
     if routing_file is None:
+        checked = ", ".join(str(p) for p in candidates)
+        print(
+            f"[gearbox] inject-routing: routing.md not found — "
+            f"CLAUDE_PLUGIN_ROOT may be unset or missing; checked: {checked}",
+            file=sys.stderr,
+        )
         return  # never block session startup
 
     try:
@@ -183,6 +189,29 @@ def _selfcheck() -> None:
     ob = profile_block("always-opus-build")
     assert "BENCHMARK MODE: always-T2" in ob
     assert "gearbox:builder" in ob and "opus" in ob
+
+    # not-found path: stderr diagnostic emitted, clean return (no stdout)
+    import io, contextlib, subprocess
+    result = subprocess.run(
+        [sys.executable, __file__],
+        capture_output=True,
+        text=True,
+        env={
+            "CLAUDE_PLUGIN_ROOT": "/nonexistent-plugin-root",
+            "CLAUDE_PROJECT_DIR": "/nonexistent-project-dir",
+        },
+    )
+    assert result.returncode == 0, f"not-found path exited non-zero: {result.returncode}"
+    assert result.stdout == "", f"unexpected stdout on not-found path: {result.stdout!r}"
+    assert "inject-routing: routing.md not found" in result.stderr, (
+        f"expected not-found diagnostic in stderr, got: {result.stderr!r}"
+    )
+    assert "CLAUDE_PLUGIN_ROOT" in result.stderr, (
+        f"expected CLAUDE_PLUGIN_ROOT mention in stderr, got: {result.stderr!r}"
+    )
+    assert "/nonexistent-plugin-root" in result.stderr, (
+        f"expected checked path in stderr, got: {result.stderr!r}"
+    )
 
     print("inject-routing selfcheck: OK")
 
