@@ -267,6 +267,31 @@ def build_row(
     }
 
 
+def load_existing_keys(out_path: Path) -> set:
+    """Return the set of (task_id, policy) pairs already present in out_path.
+
+    Mirrors label.py's load_labeled_keys(): reads existing rows, extracts the
+    dedup key, and returns the set so callers can skip pairs before running.
+    """
+    keys = set()
+    if not out_path.exists():
+        return keys
+    with out_path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+                task_id = row.get("task_id")
+                policy = row.get("policy")
+                if task_id is not None and policy is not None:
+                    keys.add((task_id, policy))
+            except json.JSONDecodeError:
+                pass
+    return keys
+
+
 def estimate_cost(n_runs: int) -> float:
     """Return the estimated total cost for n_runs × PER_RUN_EST."""
     return n_runs * PER_RUN_EST
@@ -586,6 +611,41 @@ def selfcheck() -> None:
     row_tok = build_row(t1_task, "live", env_tok, accept_ok=True, bound=True)
     assert row_tok["total_tokens"] == 1260, f"total_tokens: {row_tok['total_tokens']}"
 
+    # --- load_existing_keys: dedup round-trip ---
+    import tempfile as _tempfile
+    with _tempfile.NamedTemporaryFile(
+        mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
+    ) as _f:
+        _tmp = Path(_f.name)
+        # existing pair
+        _f.write(json.dumps({"task_id": "t-abc", "policy": "live"}) + "\n")
+        # a second distinct pair
+        _f.write(json.dumps({"task_id": "t-abc", "policy": "always-sonnet"}) + "\n")
+        # malformed line — must be skipped silently
+        _f.write("not-json\n")
+        # row with missing keys — must be skipped silently
+        _f.write(json.dumps({"policy": "live"}) + "\n")
+    try:
+        _keys = load_existing_keys(_tmp)
+        # existing pair is present
+        assert ("t-abc", "live") in _keys, \
+            "existing (task_id, policy) pair must be in keys"
+        # second distinct pair is present
+        assert ("t-abc", "always-sonnet") in _keys, \
+            "second distinct pair must be in keys"
+        # new pair is absent → would not be skipped
+        assert ("t-xyz", "live") not in _keys, \
+            "new pair must not appear in existing keys"
+        # incomplete row is not in keys
+        assert (None, "live") not in _keys, \
+            "row with missing task_id must not produce a key"
+    finally:
+        _tmp.unlink(missing_ok=True)
+
+    # non-existent file returns empty set
+    assert load_existing_keys(Path("/tmp/__nonexistent_gearbox__.jsonl")) == set(), \
+        "missing file must return empty set"
+
     # --- estimate_cost ---
     assert abs(estimate_cost(9) - 1.08) < 1e-9, \
         f"estimate_cost(9): {estimate_cost(9)}"
@@ -699,10 +759,19 @@ def main() -> None:
     written_rows: list = []
     spent = 0.0
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    existing_keys = load_existing_keys(out_path)
 
     with out_path.open("a", encoding="utf-8") as out_f:
         for policy in policies:
             for task in tasks:
+                # Dedup: skip (task_id, policy) pairs already in the output file.
+                if (task["id"], policy) in existing_keys:
+                    print(
+                        f"  [skip] ({policy}, {task['id']}) already in "
+                        f"{out_path.name} — skipping."
+                    )
+                    continue
+
                 # Budget gate: check before each run.
                 if spent + PER_RUN_EST > args.max_cost:
                     print(
@@ -746,6 +815,7 @@ def main() -> None:
                 out_f.write(json.dumps(row, ensure_ascii=False) + "\n")
                 out_f.flush()
                 written_rows.append(row)
+                existing_keys.add((task["id"], policy))
 
                 verdict = env_data.get("verifier_verdict", "?")
                 print(

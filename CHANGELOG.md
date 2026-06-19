@@ -6,6 +6,16 @@ issues/epics, not here — see the [open epics](https://github.com/dividedby/gea
 Versions before full divergence (2026-06-18) were also mirrored upstream as PRs
 (#10–#24); upstream never engaged, so mirroring stopped. See `docs/adr/0002-full-divergence.md`.
 
+## [Unreleased] — 2026-06-19 · Benchmark dedup (#18, epic #6)
+- **#18** `run-live.py` now skips `(task_id, policy)` pairs already present in
+  `bench/training-data.jsonl` before running — mirrors `label.py`'s
+  `load_labeled_keys()`. New `load_existing_keys()` loads the set from the output
+  file; within a single run the in-memory set is updated after each write so
+  within-run duplicates are also prevented. The skip is logged to stdout.
+  `--selfcheck` extended with a round-trip test (existing pair skipped, new pair
+  runs, malformed/incomplete rows silently ignored, missing file → empty set).
+  `eval.py` not touched: the warning would be noise once the source is fixed.
+
 ## [Unreleased] — 2026-06-19 · Concurrency fix (#16, epic #6)
 - **#16** Opt-in baseline keying via orchestrator-minted token: `capture-baseline.py`
   always writes `.claude/gearbox-baseline.txt` (legacy, preserving today's behavior
