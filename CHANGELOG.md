@@ -6,7 +6,15 @@ issues/epics, not here — see the [open epics](https://github.com/dividedby/gea
 Versions before full divergence (2026-06-18) were also mirrored upstream as PRs
 (#10–#24); upstream never engaged, so mirroring stopped. See `docs/adr/0002-full-divergence.md`.
 
-## [Unreleased]
+## [0.8.0] — 2026-06-19 · Cache measurement & compaction snapshot (#25, #27)
+
+The v0.8.0 epic (#8, "prompt-cache-aware routing") was **retired** after a
+capability review: prompt caching is harness-controlled, so a plugin cannot pin
+the routing policy via `cache_control: ephemeral` — and the injected policy
+already sits inside the auto-cached prefix, so that saving happens for free. What
+survived is buildable and shipped: measure the saving that already happens (#25),
+and snapshot the session ledger before compaction (#27, now under epic #13). The
+speculative cache-aware tier math (#26) was closed.
 
 ### Cache measurement (#25)
 - **#25** `bench/cache-savings.py` — read-only report that quantifies the realized
