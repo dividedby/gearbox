@@ -69,6 +69,23 @@ ever resumes and ships something worth having:
    merge-commit into `main`, bump `version`, reinstall, `/gearbox:doctor`.
 3. Re-opening a contribution PR is optional and only if they're actually engaging.
 
+## Conventions
+
+This repo is issue-tracked on GitHub under the dividedby harness.
+
+- **Domain vocabulary** — `CONTEXT.md` (gearbox routing/tier terms). Architectural
+  decisions are recorded as ADRs under `docs/adr/` (`NNNN-kebab-title.md`).
+- **Issue triage** — the `triage` skill drives a state machine over the label
+  vocabulary. Role↔label mapping: `docs/agents/triage-labels.md`; full installed set
+  and colors: `docs/agents/labels.md`. `needs-info` is intentionally absent.
+- **Intake** — file loose ideas in the single `idea-inbox` issue; file shaped work as
+  a normal labelled issue. Drain protocol: `docs/agents/idea-inbox.md`.
+- **Branching & merge** — library/trunk tier: `feature/*` → PR → `main`, merge-commit
+  only, auto-delete on merge. Global policy: `~/.claude/branching-flow.md`.
+- **Plugin caveat** — gearbox is a distributed plugin. Do **not** commit a
+  consumer-style `.claude/settings.json` or hooks here; that harness stays local and
+  uncommitted. Only the repo-tracking harness (labels, docs, ADRs) is committed.
+
 ## Out of scope here
 
 - `.claude/gearbox-log.jsonl` is per-project telemetry the plugin writes; it's
