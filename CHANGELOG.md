@@ -8,6 +8,16 @@ Versions before full divergence (2026-06-18) were also mirrored upstream as PRs
 
 ## [Unreleased]
 
+### Cache measurement (#25)
+- **#25** `bench/cache-savings.py` — read-only report that quantifies the realized
+  prompt-caching saving from `gearbox-log.jsonl`: per-model `cache_read` vs.
+  `cache_creation` split and the net USD it saved against the full input rate
+  (gross read saving − cache-creation premium). Closes the buildable half of R10:
+  caching is automatic and harness-controlled — there is no plugin `cache_control`
+  lever to add (the injected policy already sits inside the auto-cached prefix), so
+  the only real deliverable is measuring the saving that already happens.
+  `--selfcheck`-pinned.
+
 ### Parallel orchestration (epic #13)
 - **#27** `hooks/scripts/snapshot-precompact.py` — new `PreCompact` hook (registered
   in `hooks.json`, no matcher → fires on manual and auto compaction). Snapshots the
