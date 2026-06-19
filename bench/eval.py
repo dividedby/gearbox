@@ -10,26 +10,18 @@ needed.  Only T0/T1/T2 task rows are scored; TV (verifier) and (unknown) rows
 are excluded from all baseline and router totals.
 """
 import argparse
-import importlib.util
 import json
 import sys
 from pathlib import Path
 
-# Resolve hooks/scripts/ relative to this file so rates.py is importable.
+# Resolve hooks/scripts/ relative to this file so rates.py and routing_loader
+# are importable regardless of the caller's working directory.
 _hooks_scripts = str(Path(__file__).resolve().parent.parent / "hooks" / "scripts")
 if _hooks_scripts not in sys.path:
     sys.path.insert(0, _hooks_scripts)
 
 from rates import BLENDED_RATES as _BLENDED_RATES
-
-
-def _import_log_routing():
-    """Load log-routing.py via importlib (hyphen prevents direct import)."""
-    path = Path(__file__).resolve().parent.parent / "hooks" / "scripts" / "log-routing.py"
-    spec = importlib.util.spec_from_file_location("_log_routing", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+from routing_loader import tier_model as _tier_model
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +35,7 @@ TASK_TIERS = ["T0", "T1", "T2"]
 # so there is no independent literal to keep in sync.
 _TIER_RATES: dict = {
     tier: _BLENDED_RATES[model]
-    for tier, model in _import_log_routing().TIER_MODEL.items()
+    for tier, model in _tier_model().items()
 }
 
 

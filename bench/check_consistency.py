@@ -190,11 +190,15 @@ def load_tier_model(log_routing_path: Path) -> dict:
     TIER_MODEL is derived from _AGENT_ROUTING (routing tiers T0/T1/T2 only);
     this check asserts that derivation is consistent with what _AGENT_ROUTING
     itself says (i.e. every routing-tier agent maps to the right model).
+
+    Delegates to routing_loader.load_log_routing() so importlib boilerplate
+    lives in one place (hooks/scripts/routing_loader.py).
     """
-    spec = importlib.util.spec_from_file_location("_log_routing_mod2", log_routing_path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return dict(mod.TIER_MODEL)
+    _scripts_dir = str(log_routing_path.parent)
+    if _scripts_dir not in sys.path:
+        sys.path.insert(0, _scripts_dir)
+    from routing_loader import load_log_routing
+    return dict(load_log_routing().TIER_MODEL)
 
 
 def compare_tier_model(agent_routing: dict, tier_model: dict) -> list:
@@ -207,12 +211,14 @@ def compare_tier_model(agent_routing: dict, tier_model: dict) -> list:
     """
     violations = []
 
+    _routing_tiers = {"T0", "T1", "T2"}
+
     # Build expected mapping from _AGENT_ROUTING directly.
     expected: dict = {}
     for agent, info in agent_routing.items():
         tier = info["tier"]
         model = info["model"]
-        if not tier.startswith("T") or tier == "TV":
+        if tier not in _routing_tiers:
             continue
         expected[tier] = model  # intra-tier consistency already asserted in log-routing.py
 
@@ -447,9 +453,11 @@ def _run_selfcheck() -> None:
     assert any("T3" in x and "tier-model-extra" in x for x in vt4), \
         f"TIER_MODEL extra tier T3 must be detected, got: {vt4}"
 
-    # verifier (TV) must not appear in TIER_MODEL violations even when present in b_ok
-    assert not any("verifier" in x for x in vt1), \
-        f"verifier must not appear in TIER_MODEL violations, got: {vt1}"
+    # TV leakage: a TIER_MODEL that wrongly includes TV must be flagged as extra
+    tm_tv_leak = dict(tm_ok, TV="haiku")
+    vt5 = compare_tier_model(b_ok, tm_tv_leak)
+    assert any("TV" in x and "tier-model-extra" in x for x in vt5), \
+        f"TIER_MODEL with TV entry must be flagged as extra, got: {vt5}"
 
     print("selfcheck OK")
     sys.exit(0)

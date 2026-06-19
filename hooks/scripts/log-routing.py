@@ -47,20 +47,22 @@ _AGENT_ROUTING: dict = {
     "architect": {"tier": "T2", "model": "opus"},
 }
 
-# Derived tier→model map for routing tiers T0/T1/T2 only (TV is a meta-tier, excluded).
+# Derived tier→model map for routing tiers T0/T1/T2 only (TV is excluded).
 # Built from _AGENT_ROUTING so there is one canonical source; asserts intra-tier consistency.
+_ROUTING_TIERS = frozenset({"T0", "T1", "T2"})
+
+
 def _build_tier_model(routing: dict) -> dict:
-    """Return {tier: model} for routing tiers only (T0/T1/T2).
+    """Return {tier: model} for routing tiers T0/T1/T2 only.
 
     Raises AssertionError if two agents share a routing tier but disagree on model.
-    TV (verifier meta-tier) is intentionally excluded.
     """
     result: dict = {}
     for agent, info in routing.items():
         tier = info["tier"]
         model = info["model"]
-        if not tier.startswith("T") or tier == "TV":
-            continue  # skip meta-tiers
+        if tier not in _ROUTING_TIERS:
+            continue
         if tier in result:
             assert result[tier] == model, (
                 f"Intra-tier model conflict for tier={tier!r}: "
