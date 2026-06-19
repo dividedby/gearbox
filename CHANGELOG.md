@@ -6,6 +6,27 @@ issues/epics, not here — see the [open epics](https://github.com/dividedby/gea
 Versions before full divergence (2026-06-18) were also mirrored upstream as PRs
 (#10–#24); upstream never engaged, so mirroring stopped. See `docs/adr/0002-full-divergence.md`.
 
+## [Unreleased] — 2026-06-19 · Concurrency fix (#16, epic #6)
+- **#16** Opt-in baseline keying via orchestrator-minted token: `capture-baseline.py`
+  always writes `.claude/gearbox-baseline.txt` (legacy, preserving today's behavior
+  for sequential dispatches). When the orchestrator embeds `[gearbox-baseline-id=<id>]`
+  in an implementer's Task prompt (parallel path only), the hook also writes
+  `.claude/gearbox-baseline-<id>.txt`. The orchestrator mints the token itself —
+  `tool_use_id` is not available at dispatch time and must not be used.
+- Stale keyed baseline files (>1 hour) are cleaned up on each write; legacy file
+  is never touched by cleanup.
+- `routing.md` rule 9 updated: sequential path documented (no orchestrator action
+  needed); parallel path documented (orchestrator mints baseline_id, embeds in
+  implementer prompt, passes same id to verifier). Explicit note that `tool_use_id`
+  is NOT available to the orchestrator.
+- `agents/verifier.md` updated: baseline selection priority (keyed by baseline_id →
+  legacy → prompt BASELINE → missing-note); note that missing token under concurrency
+  means the legacy baseline may be stale.
+- `capture-baseline.py --selfcheck` rewritten: extract_baseline_id (present / absent /
+  malformed / empty marker), build_body header (id present/absent), integration
+  (with token → both files exist; without token → only legacy, keyed glob empty),
+  and cleanup behavior.
+
 ## [0.7.1] — 2026-06-17 · Visibility (point)
 - Status-line segment reframed to show **estimated savings vs an all-Opus baseline**
   (`gearbox saved $0.43`) instead of raw spend; `GEARBOX_STATUSLINE_UNIT=usd|tokens`
