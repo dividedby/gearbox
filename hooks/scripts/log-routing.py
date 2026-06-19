@@ -76,6 +76,9 @@ def _build_tier_model(routing: dict) -> dict:
 TIER_MODEL: dict = _build_tier_model(_AGENT_ROUTING)
 
 _VERDICT_RE = re.compile(r"VERDICT:\s*(APPROVE|REJECT)", re.IGNORECASE)
+_SCORE_RE = re.compile(r"SCORE:\s*([0-3])", re.IGNORECASE)
+
+_SCHEMA_VERSION = 2
 
 _DEFAULT_TOKEN_RATES = _TOKEN_RATES["sonnet"]
 _DEFAULT_RATE = _BLENDED_RATES["sonnet"]
@@ -329,15 +332,29 @@ def resolve_routing(subagent_type: str, tool_input: dict, tool_response) -> dict
     # --- tier ---
     tier = mapping["tier"] if mapping else None
 
-    # --- verdict (verifier only) ---
+    # --- verdict + quality_score (verifier only) ---
     verdict = None
+    quality_score = None
     if bare == "verifier":
         text = _tool_response_text(tool_response)
         m = _VERDICT_RE.search(text)
         if m:
             verdict = m.group(1).lower()
 
-    return {"model": model, "model_source": model_source, "tier": tier, "verdict": verdict}
+        sm = _SCORE_RE.search(text)
+        if verdict == "reject":
+            # Consistency clamp: reject always forces score 0.
+            quality_score = 0
+        elif verdict == "approve":
+            if sm:
+                parsed = int(sm.group(1))
+                # Contradiction: approve but SCORE 0 → treat as absent.
+                quality_score = parsed if parsed >= 1 else None
+            else:
+                quality_score = None
+        # If verdict is None (no verdict found), quality_score stays None.
+
+    return {"model": model, "model_source": model_source, "tier": tier, "verdict": verdict, "quality_score": quality_score}
 
 
 _ESCALATION_RE = re.compile(
@@ -411,6 +428,8 @@ def build_record(event: dict) -> dict:
         "escalated_from": escalated_from,
         "escalated_to": escalated_to,
         "verdict": routing["verdict"],
+        "quality_score": routing["quality_score"],
+        "schema_version": _SCHEMA_VERSION,
         "prompt_head": _scrub_secrets((tool_input.get("prompt", "") or ""))[:200],
         "cwd": event.get("cwd", ""),
         "total_tokens": metrics["total_tokens"],
@@ -580,6 +599,63 @@ if __name__ == "__main__":
         # --- resolve_routing: verifier tier is TV (meta-tier, not a routing tier) ---
         rr7 = resolve_routing("verifier", {}, None)
         assert rr7["tier"] == "TV", f"expected TV, got {rr7['tier']}"
+
+        # --- _SCORE_RE: parses digits 0–3 ---
+        for digit in ("0", "1", "2", "3"):
+            sm = _SCORE_RE.search(f"SCORE: {digit}")
+            assert sm is not None, f"_SCORE_RE must match SCORE: {digit}"
+            assert sm.group(1) == digit, f"expected {digit!r}, got {sm.group(1)!r}"
+
+        # --- quality_score: reject forces 0 regardless of emitted SCORE ---
+        rr_rej = resolve_routing("verifier", {}, "VERDICT: REJECT SCORE: 2")
+        assert rr_rej["verdict"] == "reject", f"expected reject, got {rr_rej['verdict']}"
+        assert rr_rej["quality_score"] == 0, f"reject must force quality_score=0, got {rr_rej['quality_score']}"
+
+        # --- quality_score: approve + no SCORE → None ---
+        rr_apr_noscore = resolve_routing("verifier", {}, "VERDICT: APPROVE good work")
+        assert rr_apr_noscore["verdict"] == "approve"
+        assert rr_apr_noscore["quality_score"] is None, \
+            f"approve+no-score must yield None, got {rr_apr_noscore['quality_score']}"
+
+        # --- quality_score: approve + SCORE 0 contradiction → None ---
+        rr_apr_s0 = resolve_routing("verifier", {}, "VERDICT: APPROVE SCORE: 0")
+        assert rr_apr_s0["verdict"] == "approve"
+        assert rr_apr_s0["quality_score"] is None, \
+            f"approve+score-0 contradiction must yield None, got {rr_apr_s0['quality_score']}"
+
+        # --- quality_score: approve + SCORE 2 → 2 ---
+        rr_apr_s2 = resolve_routing("verifier", {}, "VERDICT: APPROVE SCORE: 2")
+        assert rr_apr_s2["verdict"] == "approve"
+        assert rr_apr_s2["quality_score"] == 2, \
+            f"approve+score-2 must yield 2, got {rr_apr_s2['quality_score']}"
+
+        # --- quality_score: non-verifier agent → None ---
+        rr_builder = resolve_routing("gearbox:builder", {}, "VERDICT: APPROVE SCORE: 3")
+        assert rr_builder["quality_score"] is None, \
+            f"non-verifier must have quality_score=None, got {rr_builder['quality_score']}"
+
+        # --- build_record: schema_version == 2 ---
+        event_sv = {
+            "session_id": "ssv",
+            "tool_name": "Task",
+            "tool_input": {"subagent_type": "gearbox:builder", "model": "claude-sonnet-4-6", "prompt": "p"},
+            "cwd": "/tmp",
+            "tool_response": {"totalTokens": 10, "totalToolUseCount": 0, "totalDurationMs": 100},
+        }
+        r_sv = build_record(event_sv)
+        assert r_sv["schema_version"] == 2, f"expected schema_version=2, got {r_sv['schema_version']}"
+
+        # --- build_record: quality_score present ---
+        event_qv = {
+            "session_id": "sqv",
+            "tool_name": "Task",
+            "tool_input": {"subagent_type": "gearbox:verifier", "model": "claude-haiku-4-5", "prompt": "review"},
+            "cwd": "/tmp",
+            "tool_response": {"output": "VERDICT: APPROVE SCORE: 3"},
+        }
+        r_qv = build_record(event_qv)
+        assert r_qv["quality_score"] == 3, f"expected quality_score=3, got {r_qv['quality_score']}"
+        assert r_qv["schema_version"] == 2, f"expected schema_version=2, got {r_qv['schema_version']}"
 
         # --- _scrub_secrets: AWS access key id is redacted ---
         aws_text = "Use this key: AKIAIOSFODNN7EXAMPLE to authenticate"

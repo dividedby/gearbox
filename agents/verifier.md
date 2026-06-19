@@ -65,5 +65,12 @@ Decide using exactly these cases:
 
 Output format: your reply must include a line that reads exactly
 `VERDICT: APPROVE` or `VERDICT: REJECT` (put it first if you can; the
-orchestrator scans for it anywhere). Anything else you need to say is brief —
-max 150 words.
+orchestrator scans for it anywhere). Also emit a `SCORE: N` line where N is
+an integer 0–3 using this rubric:
+- `0` = reject: broken, gaming patterns, out-of-scope, or no explanation
+  (invariant: SCORE 0 ⟺ VERDICT REJECT)
+- `1` = approve, weak: works but thin coverage or rough edges
+- `2` = approve, solid: does what was asked, cleanly
+- `3` = approve, excellent: correct, well-tested, in-scope, no notes
+  (invariant: SCORE ≥ 1 ⟺ VERDICT APPROVE)
+Anything else you need to say is brief — max 150 words.

@@ -4,7 +4,7 @@
 Consumes ~/.claude/gearbox-log.jsonl (post-issue-#5 schema: ts, session_id,
 tool_name, subagent_type, model, prompt_head, cwd, total_tokens, num_turns,
 duration_ms, cost_usd, cost_estimated) and emits labeled training data for
-the future learned router (reward = success/cost).
+the future learned router (reward = quality/cost).
 """
 import argparse
 import hashlib
@@ -40,22 +40,27 @@ def _record_id(record: dict) -> str:
     return hashlib.sha1(raw.encode()).hexdigest()
 
 
-def build_training_row(record: dict, acceptable: bool) -> dict:
-    """Build a labeled training row from a log record and a human label.
+def _is_verifier(record: dict) -> bool:
+    """Return True if this record is a verifier dispatch."""
+    subagent = (record.get("subagent_type") or "").lower()
+    return subagent == "verifier" or subagent == "gearbox:verifier"
 
+
+def build_training_row(record: dict, quality_score) -> dict:
+    """Build a labeled training row from a log record and a graded quality score.
+
+    quality_score is int | None (0–3).
     Pure function — no I/O.
     """
+    # Back-compat: acceptable derived from quality_score.
+    acceptable = quality_score is not None and quality_score >= 1
+
     cost_usd = record.get("cost_usd")
     try:
         cost_float = float(cost_usd)
-        if cost_float > 0:
-            # ponytail: simplistic success/cost reward; upgrade to graded
-            # quality + escalation penalty when those signals exist. When the
-            # record's cost_usd is estimated (cost_estimated=true, the common
-            # case — see _BLENDED_RATES in log-routing.py), this reward is
-            # estimate-derived too; the row carries cost_estimated so consumers
-            # can weight or filter on it.
-            reward = (1.0 if acceptable else 0.0) / cost_float
+        if cost_float > 0 and quality_score is not None:
+            # ponytail: linear score→reward; revisit curve once score distribution is observed
+            reward = (quality_score / 3) / cost_float
         else:
             reward = None
     except (TypeError, ValueError):
@@ -63,6 +68,7 @@ def build_training_row(record: dict, acceptable: bool) -> dict:
 
     return {
         "id": _record_id(record),
+        "schema_version": 2,
         "subagent_type": record.get("subagent_type"),
         "model": record.get("model"),
         "total_tokens": record.get("total_tokens"),
@@ -95,13 +101,55 @@ def load_labeled_keys(out_path: Path) -> set:
     return keys
 
 
+def join_scores(records: list) -> dict:
+    """Attribute verifier quality scores to the nearest preceding implementer dispatch.
+
+    Given the in-order list of log records, for each verifier record with a
+    non-None quality_score, find the nearest preceding non-verifier (implementer)
+    Task dispatch in the same session_id and map its _record_id → quality_score.
+
+    Returns a dict: implementer _record_id → quality_score (int).
+
+    # ponytail: session-adjacency join; sequential only, upgrade to explicit
+    # corr_id when parallel verification lands (#13)
+    """
+    # Build an index: session_id → list of (index, record) for implementer dispatches.
+    # We scan in order so we can quickly find the nearest preceding implementer.
+    result: dict = {}
+
+    # Walk records once; maintain a per-session stack of implementer records seen so far.
+    # When we hit a verifier with a score, the top of that session's stack is the nearest
+    # preceding implementer.
+    session_impl_stack: dict = {}  # session_id → list of (record_index, record)
+
+    for idx, record in enumerate(records):
+        session_id = record.get("session_id", "")
+        if _is_verifier(record):
+            score = record.get("quality_score")
+            if score is None:
+                continue
+            # Find nearest preceding implementer in the same session.
+            stack = session_impl_stack.get(session_id)
+            if not stack:
+                continue
+            # Last item in the stack = nearest preceding implementer.
+            _, impl_record = stack[-1]
+            result[_record_id(impl_record)] = score
+        else:
+            # Non-verifier: treat as potential implementer dispatch.
+            if session_id not in session_impl_stack:
+                session_impl_stack[session_id] = []
+            session_impl_stack[session_id].append((idx, record))
+
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Selfcheck
 # ---------------------------------------------------------------------------
 
 def _run_selfcheck() -> None:
     """Assert-based tests on pure helpers only. Exits 0 on success."""
-    # build_training_row: acceptable=True, cost_usd=0.1 → reward=10.0
     rec = {
         "ts": 1700000000,
         "session_id": "s1",
@@ -114,22 +162,47 @@ def _run_selfcheck() -> None:
         "cost_usd": 0.1,
         "cost_estimated": False,
     }
-    row_true = build_training_row(rec, acceptable=True)
-    assert row_true["reward"] == 10.0, f"expected 10.0, got {row_true['reward']}"
-    assert row_true["acceptable"] is True
-    assert row_true["id"], "id must be non-empty"
 
-    # acceptable=False → reward=0.0
-    row_false = build_training_row(rec, acceptable=False)
-    assert row_false["reward"] == 0.0, f"expected 0.0, got {row_false['reward']}"
-    assert row_false["acceptable"] is False
+    # --- build_training_row: score 3, cost 0.1 → reward = (3/3)/0.1 = 10.0 ---
+    row3 = build_training_row(rec, quality_score=3)
+    assert row3["reward"] == 10.0, f"expected 10.0, got {row3['reward']}"
+    assert row3["acceptable"] is True
+    assert row3["id"], "id must be non-empty"
+    assert row3["schema_version"] == 2, f"expected schema_version=2, got {row3['schema_version']}"
 
-    # cost_usd=None → reward is None
+    # --- score 0 → reward = 0.0 ---
+    row0 = build_training_row(rec, quality_score=0)
+    assert row0["reward"] == 0.0, f"expected 0.0 for score=0, got {row0['reward']}"
+    assert row0["acceptable"] is False
+
+    # --- score 1, cost 0.1 → reward = (1/3)/0.1 ≈ 3.333... ---
+    row1 = build_training_row(rec, quality_score=1)
+    expected_r1 = (1 / 3) / 0.1
+    assert abs(row1["reward"] - expected_r1) < 1e-9, f"expected ~{expected_r1}, got {row1['reward']}"
+    assert row1["acceptable"] is True
+
+    # --- score 2, cost 0.1 → reward = (2/3)/0.1 ≈ 6.666... ---
+    row2 = build_training_row(rec, quality_score=2)
+    expected_r2 = (2 / 3) / 0.1
+    assert abs(row2["reward"] - expected_r2) < 1e-9, f"expected ~{expected_r2}, got {row2['reward']}"
+    assert row2["acceptable"] is True
+
+    # --- quality_score=None → reward is None, acceptable is False ---
+    row_none = build_training_row(rec, quality_score=None)
+    assert row_none["reward"] is None, f"expected None for quality_score=None, got {row_none['reward']}"
+    assert row_none["acceptable"] is False
+
+    # --- cost 0 → reward is None ---
+    rec_zero_cost = dict(rec, cost_usd=0.0)
+    row_zero = build_training_row(rec_zero_cost, quality_score=3)
+    assert row_zero["reward"] is None, f"expected None for cost=0, got {row_zero['reward']}"
+
+    # --- cost None → reward is None ---
     rec_no_cost = dict(rec, cost_usd=None)
-    row_none = build_training_row(rec_no_cost, acceptable=True)
-    assert row_none["reward"] is None, f"expected None, got {row_none['reward']}"
+    row_no_cost = build_training_row(rec_no_cost, quality_score=3)
+    assert row_no_cost["reward"] is None, f"expected None for cost=None, got {row_no_cost['reward']}"
 
-    # id stability: same record → same id
+    # --- id stability: same record → same id ---
     id1 = _record_id(rec)
     id2 = _record_id(rec)
     assert id1 == id2, "id must be stable"
@@ -155,9 +228,9 @@ def _run_selfcheck() -> None:
     # load_labeled_keys round-trip via tempfile
     with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, encoding="utf-8") as f:
         tmp = Path(f.name)
-        row_a = build_training_row(rec, acceptable=True)
+        row_a = build_training_row(rec, quality_score=2)
         rec_b = dict(rec, ts=1700000001, prompt_head="Another prompt")
-        row_b = build_training_row(rec_b, acceptable=False)
+        row_b = build_training_row(rec_b, quality_score=0)
         f.write(json.dumps(row_a) + "\n")
         f.write(json.dumps(row_b) + "\n")
     try:
@@ -167,12 +240,121 @@ def _run_selfcheck() -> None:
     finally:
         tmp.unlink(missing_ok=True)
 
+    # --- join_scores: basic adjacency ---
+    # builder dispatch followed immediately by verifier in same session
+    impl_rec = {
+        "ts": 1700000010, "session_id": "sess1", "uid": "u1",
+        "subagent_type": "gearbox:builder", "model": "sonnet",
+        "tool_name": "Task", "prompt_head": "build it",
+    }
+    verifier_rec = {
+        "ts": 1700000020, "session_id": "sess1", "uid": "u2",
+        "subagent_type": "gearbox:verifier", "model": "haiku",
+        "tool_name": "Task", "prompt_head": "review it",
+        "quality_score": 2,
+    }
+    scores = join_scores([impl_rec, verifier_rec])
+    impl_id = _record_id(impl_rec)
+    assert impl_id in scores, "implementer id must appear in join result"
+    assert scores[impl_id] == 2, f"expected score=2, got {scores[impl_id]}"
+
+    # --- join_scores: nearest preceding selection ---
+    # Two builder dispatches; verifier should attribute to the second (nearest).
+    impl_rec_a = {
+        "ts": 1700000010, "session_id": "sess2", "uid": "ua",
+        "subagent_type": "gearbox:builder", "model": "sonnet",
+        "tool_name": "Task", "prompt_head": "build first",
+    }
+    impl_rec_b = {
+        "ts": 1700000015, "session_id": "sess2", "uid": "ub",
+        "subagent_type": "gearbox:builder", "model": "sonnet",
+        "tool_name": "Task", "prompt_head": "build second",
+    }
+    verifier_rec2 = {
+        "ts": 1700000025, "session_id": "sess2", "uid": "uv2",
+        "subagent_type": "gearbox:verifier", "model": "haiku",
+        "tool_name": "Task", "prompt_head": "review",
+        "quality_score": 3,
+    }
+    scores2 = join_scores([impl_rec_a, impl_rec_b, verifier_rec2])
+    assert _record_id(impl_rec_b) in scores2, "nearest preceding (second) must be attributed"
+    assert scores2[_record_id(impl_rec_b)] == 3
+    # First builder is overridden (not in result or has different value — the
+    # nearest-preceding join only attributes to the last one before the verifier)
+    # In this impl, both could appear; what matters is the nearest is present.
+
+    # --- join_scores: same-session constraint ---
+    # Verifier in session B must not match an implementer in session A.
+    impl_sess_a = {
+        "ts": 1700000030, "session_id": "sessA", "uid": "ua2",
+        "subagent_type": "gearbox:builder", "model": "sonnet",
+        "tool_name": "Task", "prompt_head": "build a",
+    }
+    verifier_sess_b = {
+        "ts": 1700000040, "session_id": "sessB", "uid": "uvb",
+        "subagent_type": "gearbox:verifier", "model": "haiku",
+        "tool_name": "Task", "prompt_head": "review b",
+        "quality_score": 1,
+    }
+    scores3 = join_scores([impl_sess_a, verifier_sess_b])
+    assert _record_id(impl_sess_a) not in scores3, \
+        "cross-session attribution must not occur"
+
+    # --- join_scores: verifier with no score → no entry ---
+    verifier_no_score = {
+        "ts": 1700000050, "session_id": "sess4", "uid": "uvns",
+        "subagent_type": "gearbox:verifier", "model": "haiku",
+        "tool_name": "Task", "prompt_head": "review no score",
+        "quality_score": None,
+    }
+    impl_sess4 = {
+        "ts": 1700000045, "session_id": "sess4", "uid": "ui4",
+        "subagent_type": "gearbox:builder", "model": "sonnet",
+        "tool_name": "Task", "prompt_head": "build 4",
+    }
+    scores4 = join_scores([impl_sess4, verifier_no_score])
+    assert _record_id(impl_sess4) not in scores4, \
+        "verifier with no score must not produce an attribution"
+
+    # --- join_scores: parallel-interleave — documented ceiling (not fixed) ---
+    # Two sessions interleaved. The join is sequential, so if session ordering
+    # is interleaved, the nearest-preceding logic still works per session_id.
+    impl_p1 = {
+        "ts": 1700000060, "session_id": "par1", "uid": "up1",
+        "subagent_type": "gearbox:builder", "model": "sonnet",
+        "tool_name": "Task", "prompt_head": "par build 1",
+    }
+    impl_p2 = {
+        "ts": 1700000061, "session_id": "par2", "uid": "up2",
+        "subagent_type": "gearbox:builder", "model": "sonnet",
+        "tool_name": "Task", "prompt_head": "par build 2",
+    }
+    verifier_p1 = {
+        "ts": 1700000070, "session_id": "par1", "uid": "uvp1",
+        "subagent_type": "gearbox:verifier", "model": "haiku",
+        "tool_name": "Task", "prompt_head": "par review 1",
+        "quality_score": 2,
+    }
+    verifier_p2 = {
+        "ts": 1700000071, "session_id": "par2", "uid": "uvp2",
+        "subagent_type": "gearbox:verifier", "model": "haiku",
+        "tool_name": "Task", "prompt_head": "par review 2",
+        "quality_score": 1,
+    }
+    # Interleaved order: impl_p1, impl_p2, verifier_p1, verifier_p2
+    scores_par = join_scores([impl_p1, impl_p2, verifier_p1, verifier_p2])
+    # Because we partition by session_id, each verifier finds its own session's impl.
+    assert scores_par.get(_record_id(impl_p1)) == 2, \
+        "par1 implementer must receive score from par1 verifier"
+    assert scores_par.get(_record_id(impl_p2)) == 1, \
+        "par2 implementer must receive score from par2 verifier"
+
     print("selfcheck OK")
     sys.exit(0)
 
 
 # ---------------------------------------------------------------------------
-# Interactive labeling loop
+# Auto-derivation (default) and interactive labeling loop (--manual)
 # ---------------------------------------------------------------------------
 
 def _fmt_cost(val) -> str:
@@ -198,7 +380,50 @@ def _print_summary(record: dict) -> None:
     print(f"  prompt: {prompt!r}")
 
 
+def run_auto(log_path: Path, out_path: Path) -> None:
+    """Auto-derivation mode: join verifier scores to implementer dispatches."""
+    if not log_path.exists():
+        print(f"Log file not found: {log_path}")
+        sys.exit(0)
+
+    labeled = load_labeled_keys(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    records = []
+    with log_path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+
+    score_map = join_scores(records)
+
+    written = 0
+    with out_path.open("a", encoding="utf-8") as out_f:
+        for record in records:
+            if _is_verifier(record):
+                continue
+            rec_id = _record_id(record)
+            if rec_id in labeled:
+                continue
+            score = score_map.get(rec_id)
+            if score is None:
+                continue  # no adjacent verifier score — no reward
+            row = build_training_row(record, score)
+            out_f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            out_f.flush()
+            labeled.add(rec_id)
+            written += 1
+
+    print(f"Auto-labeled {written} record(s).")
+
+
 def run_labeling(log_path: Path, out_path: Path) -> None:
+    """Interactive --manual mode: prompt for graded score 0/1/2/3 per record."""
     if not log_path.exists():
         print(f"Log file not found: {log_path}")
         sys.exit(0)
@@ -225,7 +450,7 @@ def run_labeling(log_path: Path, out_path: Path) -> None:
             _print_summary(record)
             while True:
                 try:
-                    answer = input("  label [y=acceptable / n=not / s=skip / q=quit]: ").strip().lower()
+                    answer = input("  label [0/1/2/3=quality score / s=skip / q=quit]: ").strip().lower()
                 except EOFError:
                     print("\nEOF — quitting.")
                     return
@@ -235,14 +460,14 @@ def run_labeling(log_path: Path, out_path: Path) -> None:
                     return
                 if answer == "s":
                     break  # leave unlabeled
-                if answer in ("y", "n"):
-                    acceptable = answer == "y"
-                    row = build_training_row(record, acceptable)
+                if answer in ("0", "1", "2", "3"):
+                    quality_score = int(answer)
+                    row = build_training_row(record, quality_score)
                     out_f.write(json.dumps(row, ensure_ascii=False) + "\n")
                     out_f.flush()
                     labeled.add(rec_id)
                     break
-                print("  Please enter y, n, s, or q.")
+                print("  Please enter 0, 1, 2, 3, s, or q.")
 
     print("\nAll records processed.")
 
@@ -253,7 +478,7 @@ def run_labeling(log_path: Path, out_path: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Label gearbox delegation log records as acceptable/not for router training."
+        description="Label gearbox delegation log records with quality scores for router training."
     )
     parser.add_argument(
         "--log",
@@ -268,6 +493,11 @@ def main() -> None:
         help="Labeled output file, appended/resumed (default: bench/training-data.jsonl)",
     )
     parser.add_argument(
+        "--manual",
+        action="store_true",
+        help="Interactive labeling mode: prompt for graded score per record.",
+    )
+    parser.add_argument(
         "--selfcheck",
         action="store_true",
         help="Run assert-based self-tests on pure helpers and exit.",
@@ -277,7 +507,10 @@ def main() -> None:
     if args.selfcheck:
         _run_selfcheck()
 
-    run_labeling(Path(args.log), Path(args.out))
+    if args.manual:
+        run_labeling(Path(args.log), Path(args.out))
+    else:
+        run_auto(Path(args.log), Path(args.out))
 
 
 if __name__ == "__main__":
