@@ -35,3 +35,19 @@ def tier_model() -> dict:
     (TV is excluded by log-routing._build_tier_model).
     """
     return dict(load_log_routing().TIER_MODEL)
+
+
+def scrub_secrets(text: str) -> str:
+    """Delegate to log-routing._scrub_secrets.
+
+    Callers outside hooks/scripts/ use this so the scrubber stays in one place.
+    """
+    return load_log_routing()._scrub_secrets(text)
+
+
+def parse_escalation(prompt_text: str) -> tuple:
+    """Delegate to log-routing.parse_escalation.
+
+    Returns (escalation: bool, escalated_from: str|None, escalated_to: str|None).
+    """
+    return load_log_routing().parse_escalation(prompt_text)
