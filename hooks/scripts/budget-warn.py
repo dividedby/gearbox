@@ -10,6 +10,13 @@ dispatch row is already in the log. Emits two kinds of user-visible warnings:
   2. Per-task warnings: when a single dispatch exceeds the configured task_cap
      (post-hoc; cannot block after the fact).
 
+IMPORTANT — task_cap is WARN-ONLY BY DESIGN:
+  A dispatch's cost is unknowable before it runs, so task_cap cannot be enforced
+  pre-dispatch. This hook runs after the dispatch completes and can only surface
+  a warning — it never returns a permissionDecision and never blocks. If you need
+  hard enforcement, use session_cap (handled by enforce-budget.py, which blocks
+  via permissionDecision:"ask" before each dispatch once the session total >= cap).
+
 Fail-open: any exception → no output (never block the session on warning failure).
 No active cap → silent no-op.
 """
