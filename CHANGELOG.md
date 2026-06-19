@@ -6,6 +6,17 @@ issues/epics, not here — see the [open epics](https://github.com/dividedby/gea
 Versions before full divergence (2026-06-18) were also mirrored upstream as PRs
 (#10–#24); upstream never engaged, so mirroring stopped. See `docs/adr/0002-full-divergence.md`.
 
+## [Unreleased]
+
+### Parallel orchestration (epic #13)
+- **#27** `hooks/scripts/snapshot-precompact.py` — new `PreCompact` hook (registered
+  in `hooks.json`, no matcher → fires on manual and auto compaction). Snapshots the
+  session's routing/cost ledger (dispatches, cost, weighted/total/cache tokens, tier
+  breakdown), aggregated from `gearbox-log.jsonl`, plus the raw payload verbatim, to
+  `~/.claude/gearbox-precompact-<session_id>.json` so the post-compaction session can
+  recover its spend. Side-effecting and fail-open: never blocks compaction. Consuming
+  the snapshot at the post-compact SessionStart is R32, tracked in #13. `--selfcheck`-pinned.
+
 ## [0.7.2] — 2026-06-19 · Single source of truth & internal cleanup (epics #6, #7)
 
 Internal hardening only — refactors, a concurrency fix, and docs. No user-facing
