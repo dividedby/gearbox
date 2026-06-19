@@ -189,6 +189,7 @@ def aggregate(records: list, correction_signals: dict | None = None) -> dict:
             sig = correction_signals.get((session_id, dispatch_id))
             if sig and sig.get("corrected") and verdict is None:
                 cell["correction"] += 1
+                # A correction without an explicit verifier verdict is treated as an implicit reject for the failing tier.
                 cell["reject"] += 1  # synthetic reject for approve-rate penalty
 
     return dict(cells)

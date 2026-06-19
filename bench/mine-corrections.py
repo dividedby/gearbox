@@ -14,8 +14,10 @@ that bench/recommend.py can consume.
 Output schema per record (no raw transcript text):
   schema_version     int     always 1
   session_id         str     Claude session UUID
-  dispatch_id        str     tool_use_id from the transcript (= dispatch_id in log)
-  corrected          bool    True if a subsequent dispatch followed a correction in this session
+  dispatch_id        str     tool_use_id from the transcript (primary join key)
+  uid                str     message-level uuid from the transcript (fallback join key)
+  corrected          bool    True if the text FOLLOWING this dispatch had correction language
+                             (i.e. this dispatch failed; negative reward attaches here)
   correction_count   int     number of correction signals detected for this dispatch
   escalation_marker  bool    True if this dispatch's prompt begins with [gearbox-escalation ...]
   escalated_from     str|None  e.g. "T0"
@@ -27,10 +29,8 @@ Usage:
   python3 bench/mine-corrections.py --selfcheck
 """
 import argparse
-import importlib.util
 import json
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -58,15 +58,12 @@ _TASK_TOOL_NAMES = frozenset({"Task", "Agent"})
 # signal a correction or negative verdict on the preceding dispatch.
 # Matched case-insensitively against the lower-cased assistant text.
 _CORRECTION_KEYWORDS = [
-    "needs escalation",
     "scout was wrong",
     "was wrong",
     "incorrect",
     "redispatch",
     "re-dispatch",
     "dispatch another",
-    "escalating",
-    "escalat",          # catches "escalating", "escalated", "escalation"
     "failed twice",
     "failed again",
     "rejected",         # verifier reject surfaced in orchestrator reasoning
@@ -94,9 +91,10 @@ def _extract_task_dispatches(session_path: Path) -> list:
 
     Each dict contains:
       tool_use_id   str   the tool_use id (= dispatch_id in log)
+      uid           str   the message-level uuid from the transcript (join key fallback)
       prompt        str   raw prompt text (NOT stored in output — used only for analysis)
       preceding_text str  concatenated assistant text blocks appearing before this dispatch
-                          in the session (used for correction detection)
+                          in the session (used for correction detection on the PRIOR dispatch)
       index         int   position in the session
 
     Only Task/Agent tool_use entries are returned.  Malformed lines are skipped.
@@ -125,6 +123,7 @@ def _extract_task_dispatches(session_path: Path) -> list:
                     content = msg.get("content", [])
                     if not isinstance(content, list):
                         continue
+                    msg_uuid = obj.get("uuid", "")
                     for item in content:
                         if not isinstance(item, dict):
                             continue
@@ -139,6 +138,7 @@ def _extract_task_dispatches(session_path: Path) -> list:
                             prompt = inp.get("prompt", "") or ""
                             dispatches.append({
                                 "tool_use_id": item.get("id", ""),
+                                "uid": msg_uuid,
                                 "prompt": prompt,
                                 "preceding_text": " ".join(accumulated_assistant_text),
                                 "index": index,
@@ -164,28 +164,32 @@ def _count_correction_signals(preceding_text: str) -> int:
     return sum(1 for kw in _CORRECTION_KEYWORDS if kw in low)
 
 
-def _build_dispatch_signal(session_id: str, dispatch: dict) -> dict:
+def _build_dispatch_signal(session_id: str, dispatch: dict, following_text: str = "") -> dict:
     """Build a correction-signal record for one dispatch.
 
     Never stores raw prompt text — only scrubbed+capped prompt_head.
+
+    following_text: assistant text appearing AFTER this dispatch (before the next
+    dispatch).  Correction language here means THIS dispatch was wrong — negative
+    reward attaches to the dispatch that failed, not to the one that fixed it.
     """
     prompt = dispatch["prompt"]
-    preceding = dispatch["preceding_text"]
 
     esc, esc_from, esc_to = _parse_escalation(prompt)
 
     # prompt_head: scrubbed + capped (same rule as log-routing.py build_record)
     prompt_head = _scrub_secrets(prompt)[:_PROMPT_HEAD_CAP]
 
-    # 'corrected': True if there was correction language in the text leading
-    # up to this dispatch (i.e. the orchestrator was correcting a prior result).
-    corrected = _has_correction_language(preceding)
-    correction_count = _count_correction_signals(preceding) if corrected else 0
+    # 'corrected': True if correction language appears in the text FOLLOWING
+    # this dispatch, meaning the orchestrator judged this dispatch's output wrong.
+    corrected = _has_correction_language(following_text)
+    correction_count = _count_correction_signals(following_text) if corrected else 0
 
     return {
         "schema_version": _SCHEMA_VERSION,
         "session_id": session_id,
         "dispatch_id": dispatch["tool_use_id"],
+        "uid": dispatch.get("uid", ""),
         "corrected": corrected,
         "correction_count": correction_count,
         "escalation_marker": esc,
@@ -228,11 +232,14 @@ def join_signals(signals: list, log_index: dict) -> list:
 
     Adds 'tier', 'subagent_type' from the log record when found.
     Signals with no matching log record are kept (join is left-outer).
+    Join tries dispatch_id first, then falls back to uid (message uuid).
     """
     enriched = []
     for sig in signals:
-        key = (sig["session_id"], sig["dispatch_id"])
-        log_rec = log_index.get(key)
+        session_id = sig["session_id"]
+        log_rec = log_index.get((session_id, sig["dispatch_id"]))
+        if log_rec is None and sig.get("uid"):
+            log_rec = log_index.get((session_id, sig["uid"]))
         enriched_sig = dict(sig)
         if log_rec:
             enriched_sig["tier"] = log_rec.get("tier")
@@ -286,8 +293,11 @@ def mine_transcripts(
 
     for session_id, session_path in _iter_transcripts(transcripts_dir):
         dispatches = _extract_task_dispatches(session_path)
-        for dispatch in dispatches:
-            sig = _build_dispatch_signal(session_id, dispatch)
+        for i, dispatch in enumerate(dispatches):
+            # following_text is the orchestrator text between THIS dispatch and
+            # the next one.  Correction language there means THIS dispatch failed.
+            following_text = dispatches[i + 1]["preceding_text"] if i + 1 < len(dispatches) else ""
+            sig = _build_dispatch_signal(session_id, dispatch, following_text)
             signals.append(sig)
 
     return join_signals(signals, log_index)
@@ -305,14 +315,16 @@ def _run_selfcheck() -> None:
     import tempfile
 
     # --- _has_correction_language ---
-    assert _has_correction_language("needs escalation from scout") is True
+    # Escalation prose ("needs escalation", "escalating") is excluded from
+    # keywords — structural escalation is tracked via parse_escalation separately.
+    assert _has_correction_language("needs escalation from scout") is False
     assert _has_correction_language("the scout was wrong about this") is True
     assert _has_correction_language("looks good, dispatch another") is True
     assert _has_correction_language("this is a normal message") is False
     assert _has_correction_language("") is False
 
     # --- _count_correction_signals ---
-    assert _count_correction_signals("needs escalation, was wrong") >= 2
+    assert _count_correction_signals("was wrong, dispatch another") >= 2
     assert _count_correction_signals("nothing here") == 0
 
     # --- _parse_escalation (delegated via routing_loader) ---
@@ -335,11 +347,13 @@ def _run_selfcheck() -> None:
     raw_prompt = "Do the thing now token=AKIA1234567890ABCDEF1234"
     dispatch = {
         "tool_use_id": "toolu_test_001",
+        "uid": "msg-uuid-001",
         "prompt": raw_prompt,
-        "preceding_text": "The scout was wrong, needs escalation.",
+        "preceding_text": "",  # not used for correction attribution
         "index": 0,
     }
-    sig = _build_dispatch_signal("sess-abc", dispatch)
+    # following_text contains correction language → THIS dispatch was wrong
+    sig = _build_dispatch_signal("sess-abc", dispatch, following_text="The scout was wrong, dispatch another.")
 
     # Must not contain the raw AWS key
     assert "AKIA1234567890ABCDEF1234" not in sig["prompt_head"], \
@@ -347,29 +361,33 @@ def _run_selfcheck() -> None:
     # prompt_head must be capped at 200 chars
     assert len(sig["prompt_head"]) <= _PROMPT_HEAD_CAP, \
         f"prompt_head length {len(sig['prompt_head'])} exceeds cap {_PROMPT_HEAD_CAP}"
-    # corrected must be True (preceding text has correction language)
-    assert sig["corrected"] is True, "corrected must be True for correction language in preceding_text"
+    # corrected must be True (following_text has correction language)
+    assert sig["corrected"] is True, "corrected must be True when following_text has correction language"
     assert sig["correction_count"] >= 2, \
         f"expected >=2 correction signals, got {sig['correction_count']}"
     assert sig["session_id"] == "sess-abc"
     assert sig["dispatch_id"] == "toolu_test_001"
+    assert sig["uid"] == "msg-uuid-001", "uid must be emitted from dispatch dict"
 
     # --- _build_dispatch_signal: escalation marker detected ---
     esc_dispatch = {
         "tool_use_id": "toolu_esc_001",
+        "uid": "",
         "prompt": "[gearbox-escalation from=T0 to=T1]\nPrevious scout attempt failed: OOM error.",
-        "preceding_text": "The scout reported needs escalation.",
+        "preceding_text": "",
         "index": 1,
     }
+    # Escalation-marker dispatch is the fixer; no following correction → corrected=False
     esc_sig = _build_dispatch_signal("sess-esc", esc_dispatch)
     assert esc_sig["escalation_marker"] is True, "escalation_marker must be True"
     assert esc_sig["escalated_from"] == "T0"
     assert esc_sig["escalated_to"] == "T1"
-    assert esc_sig["corrected"] is True  # preceding text also has correction language
+    assert esc_sig["corrected"] is False  # no following correction text; this dispatch fixed the problem
 
     # --- _build_dispatch_signal: no correction, no escalation ---
     clean_dispatch = {
         "tool_use_id": "toolu_clean_001",
+        "uid": "",
         "prompt": "Implement the feature as described.",
         "preceding_text": "Great, let's proceed with the implementation.",
         "index": 0,
@@ -451,20 +469,28 @@ def _run_selfcheck() -> None:
         dispatches = _extract_task_dispatches(tmp_t)
         assert len(dispatches) == 2, f"expected 2 dispatches, got {len(dispatches)}"
 
-        # First dispatch: no preceding text → not corrected
-        sig_s1 = _build_dispatch_signal("sess-synth", dispatches[0])
+        # Verify uid is captured from message-level uuid field.
+        assert dispatches[0]["uid"] == "u1", f"expected uid=u1, got {dispatches[0]['uid']}"
+        assert dispatches[1]["uid"] == "u2", f"expected uid=u2, got {dispatches[1]['uid']}"
+
+        # Scout dispatch: its following_text = builder's preceding_text =
+        # "The scout was wrong. Needs escalation." → "was wrong" → corrected=True.
+        # Negative reward attaches to the SCOUT (the dispatch that failed), not the builder.
+        scout_following = dispatches[1]["preceding_text"]
+        sig_s1 = _build_dispatch_signal("sess-synth", dispatches[0], following_text=scout_following)
         assert sig_s1["dispatch_id"] == "toolu_s1"
-        assert sig_s1["corrected"] is False, \
-            "first dispatch has no preceding correction text"
+        assert sig_s1["corrected"] is True, \
+            "scout dispatch must be flagged corrected=True: its following text has correction language"
         assert sig_s1["escalation_marker"] is False
 
-        # Second dispatch: preceding text has correction language → corrected
-        sig_b1 = _build_dispatch_signal("sess-synth", dispatches[1])
+        # Builder dispatch: no dispatch follows → following_text="" → corrected=False.
+        # The builder fixed the problem; negative reward must NOT attach to it.
+        sig_b1 = _build_dispatch_signal("sess-synth", dispatches[1], following_text="")
         assert sig_b1["dispatch_id"] == "toolu_b1"
-        assert sig_b1["corrected"] is True, \
-            "second dispatch follows correction language → corrected=True"
+        assert sig_b1["corrected"] is False, \
+            "builder dispatch must not be penalized: it is the fixer, not the failure"
         assert sig_b1["escalation_marker"] is True, \
-            "second dispatch has escalation marker in prompt"
+            "builder dispatch has escalation marker in prompt"
         assert sig_b1["escalated_from"] == "T0"
         assert sig_b1["escalated_to"] == "T1"
 
@@ -475,7 +501,7 @@ def _run_selfcheck() -> None:
             assert "Explore the codebase briefly." not in dumped or len("Explore the codebase briefly.") <= _PROMPT_HEAD_CAP, \
                 "raw prompt text must not appear beyond cap"
             assert "The scout was wrong. Needs escalation." not in dumped, \
-                "preceding_text (correction context) must not appear in output"
+                "correction context must not appear in output"
             assert "Fix the bug properly." not in dumped or len("Fix the bug properly.") <= _PROMPT_HEAD_CAP, \
                 "raw prompt beyond cap must not appear in output"
 
