@@ -6,6 +6,20 @@ issues/epics, not here — see the [open epics](https://github.com/dividedby/gea
 Versions before full divergence (2026-06-18) were also mirrored upstream as PRs
 (#10–#24); upstream never engaged, so mirroring stopped. See `docs/adr/0002-full-divergence.md`.
 
+## [Unreleased] — 2026-06-19 · task_cap documented as warn-only by design (#19, epic #6)
+- **#19** Clarified in-place that `task_cap` is **warn-only by design** and never
+  blocks dispatches. `budget-warn.py` docstring now leads with an explicit
+  "WARN-ONLY BY DESIGN" callout explaining why pre-dispatch enforcement is not
+  possible (cost unknowable before a dispatch runs). `enforce-budget.py` docstring
+  updated to explicitly name `task_cap` and redirect to `budget-warn.py`.
+  `budget_common.py` `resolve_budget_config` docstring now documents both cap
+  semantics side-by-side; `is_active` clarified that `task_cap` does not enable
+  blocking. `README.md` Budget caps section now labels `session_cap` as
+  **blocking** and `task_cap` as **warn-only, never blocks**, with guidance to use
+  `session_cap` for hard enforcement. Version history blurb for 0.6.0 corrected
+  ("per-task warn-only threshold" replaces "per-task ceilings").
+  No enforcement behavior changed; no code logic touched.
+
 ## [Unreleased] — 2026-06-19 · Inject-routing not-found diagnostic (#20, epic #6)
 - **#20** `inject-routing.py` now emits a one-line stderr diagnostic when neither
   the project-local nor the plugin copy of `routing.md` is found, naming the likely

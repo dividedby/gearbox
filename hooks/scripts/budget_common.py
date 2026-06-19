@@ -94,6 +94,16 @@ def resolve_budget_config(env: dict, cwd: str) -> dict:
       2. Project file: <cwd>/.claude/gearbox-budget.json
       3. Env vars: GEARBOX_SESSION_CAP, GEARBOX_TASK_CAP, GEARBOX_BUDGET_UNIT
 
+    Cap semantics (by design):
+      session_cap — enforced. enforce-budget.py reads this and returns
+        permissionDecision:"ask" to block (or prompt) the next dispatch when
+        the session total >= cap. This is the only blocking cap.
+      task_cap — warn-only. budget-warn.py reads this post-hoc and emits a
+        systemMessage warning if a single completed dispatch exceeded the
+        threshold. It NEVER blocks; a dispatch's cost is unknowable before it
+        runs, so pre-dispatch enforcement is not possible without a
+        prior-run-mean proxy (not implemented, by design).
+
     All failures are fail-open: bad parse / missing keys → keep prior value.
     Unit is normalized to one of {"wtok","tok","usd"}; anything else → "wtok".
     Returns dict with keys: session_cap (float|None), task_cap (float|None), unit (str).
@@ -147,7 +157,12 @@ def resolve_budget_config(env: dict, cwd: str) -> dict:
 
 
 def is_active(cfg: dict) -> bool:
-    """Return True if any cap is configured (budget enforcement is on)."""
+    """Return True if any cap is configured (budget tracking is on).
+
+    Note: task_cap being set does NOT enable blocking — it only enables the
+    post-hoc per-task warning emitted by budget-warn.py. Only session_cap
+    triggers blocking enforcement (via enforce-budget.py).
+    """
     return cfg["session_cap"] is not None or cfg["task_cap"] is not None
 
 

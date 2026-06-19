@@ -5,7 +5,10 @@ PreToolUse hook for Task/Agent. Enforces the SESSION cap only — if the current
 session has already consumed >= the configured cap, it returns a permissionDecision
 of "ask" so the user can approve or decline each overrun dispatch.
 
-Per-task ceiling is a post-hoc warning handled by budget-warn.py, not this hook.
+Per-task ceiling (task_cap) is WARN-ONLY BY DESIGN and is NOT handled here.
+budget-warn.py emits a post-hoc systemMessage warning after a dispatch that
+exceeded task_cap; it cannot block because the cost is unknowable before the
+dispatch runs.
 
 Fail-open: any exception → allow the dispatch silently (no output, no block).
 No cap configured → silent no-op.
