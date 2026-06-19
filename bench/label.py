@@ -46,6 +46,14 @@ def _is_verifier(record: dict) -> bool:
     return subagent == "verifier" or subagent == "gearbox:verifier"
 
 
+def _is_implementer(record: dict) -> bool:
+    """Return True if this record is an implementer dispatch (tier T1 or T2).
+
+    Scouts/grunts (T0) and the verifier meta-tier (TV) are excluded.
+    """
+    return record.get("tier") in ("T1", "T2")
+
+
 def build_training_row(record: dict, quality_score) -> dict:
     """Build a labeled training row from a log record and a graded quality score.
 
@@ -102,11 +110,14 @@ def load_labeled_keys(out_path: Path) -> set:
 
 
 def join_scores(records: list) -> dict:
-    """Attribute verifier quality scores to the nearest preceding implementer dispatch.
+    """Attribute verifier quality scores to the nearest preceding IMPLEMENTER dispatch.
 
     Given the in-order list of log records, for each verifier record with a
-    non-None quality_score, find the nearest preceding non-verifier (implementer)
+    non-None quality_score, find the nearest preceding implementer (tier T1/T2)
     Task dispatch in the same session_id and map its _record_id → quality_score.
+
+    Non-implementer records (scouts / T0 / unknown tier) are skipped entirely —
+    the join is the editing-dispatch filter, not a catch-all for all dispatches.
 
     Returns a dict: implementer _record_id → quality_score (int).
 
@@ -135,11 +146,12 @@ def join_scores(records: list) -> dict:
             # Last item in the stack = nearest preceding implementer.
             _, impl_record = stack[-1]
             result[_record_id(impl_record)] = score
-        else:
-            # Non-verifier: treat as potential implementer dispatch.
+        elif _is_implementer(record):
+            # Implementer (T1/T2) dispatch: eligible for reward attribution.
             if session_id not in session_impl_stack:
                 session_impl_stack[session_id] = []
             session_impl_stack[session_id].append((idx, record))
+            # Non-implementer non-verifier records (scouts/T0) are ignored entirely.
 
     return result
 
@@ -244,7 +256,7 @@ def _run_selfcheck() -> None:
     # builder dispatch followed immediately by verifier in same session
     impl_rec = {
         "ts": 1700000010, "session_id": "sess1", "uid": "u1",
-        "subagent_type": "gearbox:builder", "model": "sonnet",
+        "subagent_type": "gearbox:builder", "tier": "T1", "model": "sonnet",
         "tool_name": "Task", "prompt_head": "build it",
     }
     verifier_rec = {
@@ -262,12 +274,12 @@ def _run_selfcheck() -> None:
     # Two builder dispatches; verifier should attribute to the second (nearest).
     impl_rec_a = {
         "ts": 1700000010, "session_id": "sess2", "uid": "ua",
-        "subagent_type": "gearbox:builder", "model": "sonnet",
+        "subagent_type": "gearbox:builder", "tier": "T1", "model": "sonnet",
         "tool_name": "Task", "prompt_head": "build first",
     }
     impl_rec_b = {
         "ts": 1700000015, "session_id": "sess2", "uid": "ub",
-        "subagent_type": "gearbox:builder", "model": "sonnet",
+        "subagent_type": "gearbox:builder", "tier": "T1", "model": "sonnet",
         "tool_name": "Task", "prompt_head": "build second",
     }
     verifier_rec2 = {
@@ -287,7 +299,7 @@ def _run_selfcheck() -> None:
     # Verifier in session B must not match an implementer in session A.
     impl_sess_a = {
         "ts": 1700000030, "session_id": "sessA", "uid": "ua2",
-        "subagent_type": "gearbox:builder", "model": "sonnet",
+        "subagent_type": "gearbox:builder", "tier": "T1", "model": "sonnet",
         "tool_name": "Task", "prompt_head": "build a",
     }
     verifier_sess_b = {
@@ -309,24 +321,61 @@ def _run_selfcheck() -> None:
     }
     impl_sess4 = {
         "ts": 1700000045, "session_id": "sess4", "uid": "ui4",
-        "subagent_type": "gearbox:builder", "model": "sonnet",
+        "subagent_type": "gearbox:builder", "tier": "T1", "model": "sonnet",
         "tool_name": "Task", "prompt_head": "build 4",
     }
     scores4 = join_scores([impl_sess4, verifier_no_score])
     assert _record_id(impl_sess4) not in scores4, \
         "verifier with no score must not produce an attribution"
 
+    # --- join_scores: scout between implementer and verifier must NOT receive reward ---
+    # The scout is T0; the implementer (T1) should be attributed, not the scout.
+    impl_t1 = {
+        "ts": 1700000080, "session_id": "sess5", "uid": "ui5",
+        "subagent_type": "gearbox:builder", "tier": "T1", "model": "sonnet",
+        "tool_name": "Task", "prompt_head": "build it",
+    }
+    scout_between = {
+        "ts": 1700000085, "session_id": "sess5", "uid": "us5",
+        "subagent_type": "gearbox:scout", "tier": "T0", "model": "haiku",
+        "tool_name": "Task", "prompt_head": "scout probe",
+    }
+    verifier_after_scout = {
+        "ts": 1700000090, "session_id": "sess5", "uid": "uv5",
+        "subagent_type": "gearbox:verifier", "tier": "TV", "model": "haiku",
+        "tool_name": "Task", "prompt_head": "review it",
+        "quality_score": 2,
+    }
+    scores5 = join_scores([impl_t1, scout_between, verifier_after_scout])
+    assert _record_id(impl_t1) in scores5, \
+        "implementer (T1) must receive the reward even when a scout appears between it and verifier"
+    assert scores5[_record_id(impl_t1)] == 2, \
+        f"expected score=2 on implementer, got {scores5[_record_id(impl_t1)]}"
+    assert _record_id(scout_between) not in scores5, \
+        "scout (T0) must NOT appear in the join result — non-implementers are skipped"
+
+    # --- join_scores: verifier with score but no preceding implementer → no entry ---
+    verifier_orphan = {
+        "ts": 1700000100, "session_id": "sess6", "uid": "uvo",
+        "subagent_type": "gearbox:verifier", "tier": "TV", "model": "haiku",
+        "tool_name": "Task", "prompt_head": "orphan review",
+        "quality_score": 3,
+    }
+    scores6 = join_scores([verifier_orphan])
+    assert len(scores6) == 0, \
+        f"verifier with score but no preceding implementer must produce no entry; got {scores6}"
+
     # --- join_scores: parallel-interleave — documented ceiling (not fixed) ---
     # Two sessions interleaved. The join is sequential, so if session ordering
     # is interleaved, the nearest-preceding logic still works per session_id.
     impl_p1 = {
         "ts": 1700000060, "session_id": "par1", "uid": "up1",
-        "subagent_type": "gearbox:builder", "model": "sonnet",
+        "subagent_type": "gearbox:builder", "tier": "T1", "model": "sonnet",
         "tool_name": "Task", "prompt_head": "par build 1",
     }
     impl_p2 = {
         "ts": 1700000061, "session_id": "par2", "uid": "up2",
-        "subagent_type": "gearbox:builder", "model": "sonnet",
+        "subagent_type": "gearbox:builder", "tier": "T1", "model": "sonnet",
         "tool_name": "Task", "prompt_head": "par build 2",
     }
     verifier_p1 = {

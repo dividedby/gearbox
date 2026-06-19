@@ -78,6 +78,8 @@ TIER_MODEL: dict = _build_tier_model(_AGENT_ROUTING)
 _VERDICT_RE = re.compile(r"VERDICT:\s*(APPROVE|REJECT)", re.IGNORECASE)
 _SCORE_RE = re.compile(r"SCORE:\s*([0-3])", re.IGNORECASE)
 
+# Schema version written to every new record.  Old records predate this field
+# and are implicitly v1; they are NOT back-filled — consumers read defensively via .get().
 _SCHEMA_VERSION = 2
 
 _DEFAULT_TOKEN_RATES = _TOKEN_RATES["sonnet"]
