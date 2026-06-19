@@ -6,6 +6,21 @@ issues/epics, not here — see the [open epics](https://github.com/dividedby/gea
 Versions before full divergence (2026-06-18) were also mirrored upstream as PRs
 (#10–#24); upstream never engaged, so mirroring stopped. See `docs/adr/0002-full-divergence.md`.
 
+## [Unreleased] — 2026-06-19 · Canonical tier→model map (#23, epic #7)
+
+### Changed
+- **#23** `hooks/scripts/log-routing.py`: derives and exports `TIER_MODEL`
+  (`{"T0": "haiku", "T1": "sonnet", "T2": "opus"}`) from `_AGENT_ROUTING` at
+  module load. Asserts intra-tier consistency (two agents on the same tier must
+  agree on model). TV (verifier meta-tier) is excluded.
+- **#23** `bench/run-live.py`: `_TIER_FAMILY` now loaded from `TIER_MODEL` via
+  importlib; independent literal removed.
+- **#23** `bench/eval.py`: `_TIER_RATES` now derived as
+  `BLENDED_RATES[TIER_MODEL[tier]]` for each routing tier; independent literal removed.
+- **#23** `bench/check_consistency.py`: `compare_tier_model()` + `load_tier_model()`
+  added; `run_real_check()` and `--selfcheck` now assert `TIER_MODEL` matches
+  `_AGENT_ROUTING`. Zero behavior change; all numeric values identical.
+
 ## [Unreleased] — 2026-06-19 · Single rates module (#22, epic #7)
 
 ### Added

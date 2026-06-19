@@ -26,6 +26,14 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Resolve hooks/scripts/ so routing_loader (and rates.py) are importable
+# regardless of the caller's working directory.
+_hooks_scripts = str(Path(__file__).resolve().parent.parent / "hooks" / "scripts")
+if _hooks_scripts not in sys.path:
+    sys.path.insert(0, _hooks_scripts)
+
+from routing_loader import tier_model as _tier_model
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -144,11 +152,9 @@ def model_families(model_usage: dict) -> set:
 
 
 # Maps tier → expected model family for policy-binding checks.
-_TIER_FAMILY: dict = {
-    "T0": "haiku",
-    "T1": "sonnet",
-    "T2": "opus",
-}
+# Derived from log-routing.py TIER_MODEL (the canonical source) so there is
+# no independent literal to keep in sync.
+_TIER_FAMILY: dict = _tier_model()
 
 # A forced policy pins every task to one tier regardless of the task's natural
 # tier, so the binding check (and the row's effective tier) must use the FORCED

@@ -14,12 +14,14 @@ import json
 import sys
 from pathlib import Path
 
-# Resolve hooks/scripts/ relative to this file so rates.py is importable.
+# Resolve hooks/scripts/ relative to this file so rates.py and routing_loader
+# are importable regardless of the caller's working directory.
 _hooks_scripts = str(Path(__file__).resolve().parent.parent / "hooks" / "scripts")
 if _hooks_scripts not in sys.path:
     sys.path.insert(0, _hooks_scripts)
 
 from rates import BLENDED_RATES as _BLENDED_RATES
+from routing_loader import tier_model as _tier_model
 
 
 # ---------------------------------------------------------------------------
@@ -29,10 +31,11 @@ from rates import BLENDED_RATES as _BLENDED_RATES
 # Ordered routing tiers and their blended rates.  Order matters for
 # escalate-on-fail: a T1 row pays T0 + T1; a T2 row pays T0 + T1 + T2.
 TASK_TIERS = ["T0", "T1", "T2"]
+# Derived from log-routing.py TIER_MODEL (the canonical tier→model source)
+# so there is no independent literal to keep in sync.
 _TIER_RATES: dict = {
-    "T0": _BLENDED_RATES["haiku"],
-    "T1": _BLENDED_RATES["sonnet"],
-    "T2": _BLENDED_RATES["opus"],
+    tier: _BLENDED_RATES[model]
+    for tier, model in _tier_model().items()
 }
 
 
