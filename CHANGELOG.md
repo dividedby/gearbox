@@ -6,6 +6,22 @@ issues/epics, not here — see the [open epics](https://github.com/dividedby/gea
 Versions before full divergence (2026-06-18) were also mirrored upstream as PRs
 (#10–#24); upstream never engaged, so mirroring stopped. See `docs/adr/0002-full-divergence.md`.
 
+## [Unreleased] — 2026-06-19 · Single rates module (#22, epic #7)
+
+### Added
+- **#22** `hooks/scripts/rates.py` — single source of truth for the model rate
+  card. Exposes `TOKEN_RATES` (per-component USD/M), `BLENDED_RATES` (fallback
+  blended USD/M), and `HAIKU_REF` (weighted-token denominator). Rate card
+  confirmed 2026-06-19. `--selfcheck` pins all expected current values.
+
+### Changed
+- **#22** `hooks/scripts/log-routing.py`, `hooks/scripts/budget_common.py`,
+  `bench/statusline.py`, and `bench/eval.py` now import rate constants from
+  `rates.py` instead of declaring them locally. Cross-reference sync comments
+  (ponytail: re-pin together) removed. Zero behavior change; all numeric values
+  are identical.
+- CI: added `python3 hooks/scripts/rates.py --selfcheck` step.
+
 ## [Unreleased] — 2026-06-19 · Remove session-summary seam (#21, epic #6)
 
 ### Removed

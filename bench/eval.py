@@ -14,19 +14,17 @@ import json
 import sys
 from pathlib import Path
 
+# Resolve hooks/scripts/ relative to this file so rates.py is importable.
+_hooks_scripts = str(Path(__file__).resolve().parent.parent / "hooks" / "scripts")
+if _hooks_scripts not in sys.path:
+    sys.path.insert(0, _hooks_scripts)
+
+from rates import BLENDED_RATES as _BLENDED_RATES
+
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-
-# Canonical blended USD-per-million-tokens rates, date-pinned 2026-06.
-# Mirrors _BLENDED_RATES in hooks/scripts/log-routing.py — re-pin both
-# together when Anthropic pricing changes.
-_BLENDED_RATES: dict = {
-    "haiku":  1.5,
-    "sonnet": 5.0,
-    "opus":   8.0,
-}
 
 # Ordered routing tiers and their blended rates.  Order matters for
 # escalate-on-fail: a T1 row pays T0 + T1; a T2 row pays T0 + T1 + T2.

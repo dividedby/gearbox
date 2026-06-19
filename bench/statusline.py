@@ -33,29 +33,18 @@ import os
 import sys
 from pathlib import Path
 
+# Resolve hooks/scripts/ relative to this file so rates.py is importable.
+_hooks_scripts = str(Path(__file__).resolve().parent.parent / "hooks" / "scripts")
+if _hooks_scripts not in sys.path:
+    sys.path.insert(0, _hooks_scripts)
+
+from rates import TOKEN_RATES as _TOKEN_RATES, HAIKU_REF as _HAIKU_REF
+
 # ---------------------------------------------------------------------------
 # Rate constants
 # ---------------------------------------------------------------------------
 
-# ponytail: Opus per-component USD-per-million-tokens rates sourced from
-# hooks/scripts/log-routing.py _TOKEN_RATES["opus"], 2026-06 Anthropic rate card.
-# Must stay in sync with that table when pricing changes.
-#   hooks/scripts/log-routing.py line 50:
-#     "opus": {"input": 5.00, "output": 25.00, "cache_read": 0.50,
-#              "cache_write_5m": 6.25, "cache_write_1h": 10.00}
-_OPUS_RATES = {
-    "input": 5.00,
-    "output": 25.00,
-    "cache_read": 0.50,
-    "cache_write_5m": 6.25,
-    "cache_write_1h": 10.00,
-}
-
-# ponytail: Haiku input rate (USD per million tokens) sourced from
-# hooks/scripts/budget_common.py HAIKU_REF == 1.00.
-# Must stay in sync with that constant when pricing changes.
-#   hooks/scripts/budget_common.py line 18: HAIKU_REF = 1.00
-_HAIKU_REF = 1.00  # USD per million tokens (used as denominator for weighted tokens)
+_OPUS_RATES = _TOKEN_RATES["opus"]
 
 
 def _counterfactual_cost(rec: dict) -> "float | None":

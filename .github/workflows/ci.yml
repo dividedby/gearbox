@@ -16,6 +16,9 @@ jobs:
           persist-credentials: false
 
       # --- Selfchecks for hook scripts and bench tools ---
+      - name: Selfcheck rates.py
+        run: python3 hooks/scripts/rates.py --selfcheck
+
       - name: Selfcheck log-routing.py
         run: python3 hooks/scripts/log-routing.py --selfcheck
 
