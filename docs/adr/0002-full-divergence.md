@@ -21,8 +21,9 @@ remote configured but dormant. The fork is now the only thing we track.
 ## Consequences
 
 - No more upstream-shaped constraints: we ship the change that's best for the fork.
-- New work updates `maintenance/README.md` + `maintenance/docs/roadmap.md`; there's no
-  upstream PR to fold it into.
+- New work is recorded in `CHANGELOG.md` (shipped) and GitHub issues/epics (planned);
+  there's no upstream PR to fold it into. (Originally noted in-repo roadmap docs; those
+  were retired into GitHub epics + `CHANGELOG.md` on 2026-06-18.)
 - If the maintainer ever revives the project, recovery is `git fetch upstream` →
   cherry-pick wanted commits onto a `feature/*` branch, resolving conflicts in our
   favour (see CLAUDE.md "If upstream revives").
