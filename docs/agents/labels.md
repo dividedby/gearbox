@@ -1,7 +1,8 @@
 # Label Convention
 
 The CORE dividedby label set this repo carries. Stock GitHub labels are removed on
-onboarding. `needs-info` is intentionally absent (we use `needs-triage`).
+onboarding. `needs-info` is intentionally absent — unevaluated issues sit at `needs-triage`, and
+requests for more detail are handled in comments rather than a dedicated label.
 
 ## State (workflow position)
 
