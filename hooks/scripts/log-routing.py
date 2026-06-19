@@ -369,9 +369,19 @@ def build_record(event: dict) -> dict:
             metrics["cost_usd"] = round(metrics["total_tokens"] / 1e6 * blended_rate, 8)
             metrics["cost_estimated"] = True
 
+    # dispatch_id: the tool_use_id from the PostToolUse event payload — unique
+    # per Task/Agent call, stable across concurrent dispatches.  Shared primitive
+    # used by budget-warn.py (and future consumers) to correlate this log row
+    # with the exact dispatch that caused it, rather than relying on "last row"
+    # heuristics that break under parallel fan-out.  Falls back to uid when
+    # tool_use_id is absent (old event formats / non-Task tools).
+    tool_use_id = event.get("tool_use_id") or ""
+    dispatch_id = tool_use_id if tool_use_id else f"{os.getpid()}-{time.time_ns()}"
+
     return {
         "ts": int(time.time()),
         "uid": f"{os.getpid()}-{time.time_ns()}",
+        "dispatch_id": dispatch_id,
         "session_id": event.get("session_id", ""),
         "tool_name": event.get("tool_name", ""),
         "subagent_type": subagent_type,
@@ -717,6 +727,40 @@ if __name__ == "__main__":
         assert r_noesc["escalation"] is False, f"expected escalation=False in record, got {r_noesc['escalation']}"
         assert r_noesc["escalated_from"] is None, f"expected escalated_from=None, got {r_noesc['escalated_from']}"
         assert r_noesc["escalated_to"] is None, f"expected escalated_to=None, got {r_noesc['escalated_to']}"
+
+        # --- dispatch_id: tool_use_id present → used as dispatch_id ---
+        event_tuid = {
+            "session_id": "stuid",
+            "tool_use_id": "toolu_abc123",
+            "tool_name": "Task",
+            "tool_input": {"subagent_type": "gearbox:builder", "model": "claude-sonnet-4-6", "prompt": "p"},
+            "cwd": "/tmp",
+            "tool_response": {"totalTokens": 10, "totalToolUseCount": 0, "totalDurationMs": 100},
+        }
+        r_tuid = build_record(event_tuid)
+        assert r_tuid["dispatch_id"] == "toolu_abc123", \
+            f"expected dispatch_id=toolu_abc123, got {r_tuid['dispatch_id']!r}"
+
+        # --- dispatch_id: tool_use_id absent → falls back to uid-style value (non-empty) ---
+        event_no_tuid = {
+            "session_id": "snot",
+            "tool_name": "Task",
+            "tool_input": {"subagent_type": "gearbox:scout", "model": "claude-haiku-4-5", "prompt": "p"},
+            "cwd": "/tmp",
+            "tool_response": {"totalTokens": 5, "totalToolUseCount": 0, "totalDurationMs": 50},
+        }
+        r_no_tuid = build_record(event_no_tuid)
+        assert r_no_tuid["dispatch_id"], \
+            f"dispatch_id must be non-empty when tool_use_id absent, got {r_no_tuid['dispatch_id']!r}"
+        # fallback must differ from a known tool_use_id value
+        assert r_no_tuid["dispatch_id"] != "toolu_abc123", \
+            "fallback dispatch_id must not collide with a real tool_use_id"
+
+        # --- dispatch_id: two fallback records get distinct dispatch_ids ---
+        ra2 = build_record(event_no_tuid)
+        rb2 = build_record(event_no_tuid)
+        assert ra2["dispatch_id"] != rb2["dispatch_id"], \
+            f"two fallback dispatch_ids must be distinct: {ra2['dispatch_id']!r}"
 
         print("selfcheck OK")
         sys.exit(0)
