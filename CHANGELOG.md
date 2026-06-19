@@ -6,6 +6,28 @@ issues/epics, not here — see the [open epics](https://github.com/dividedby/gea
 Versions before full divergence (2026-06-18) were also mirrored upstream as PRs
 (#10–#24); upstream never engaged, so mirroring stopped. See `docs/adr/0002-full-divergence.md`.
 
+## [Unreleased]
+
+Work landing toward the v0.9.0 epic (#9, "Graded reward — the moat"). Rolls into a
+`[0.9.0]` section when the epic completes.
+
+### Graded reward (#28, R13)
+- **#28** Graded verifier signal — the verifier now emits a `SCORE: N` line (integer
+  0–3 quality ordinal: 0=reject, 1=weak, 2=solid, 3=excellent) alongside the existing
+  `VERDICT:` line, which stays authoritative for the orchestrator gate (`agents/verifier.md`).
+- `hooks/scripts/log-routing.py` captures it as a new `quality_score` log field
+  (verifier records only), clamped for consistency against the verdict (REJECT→0;
+  APPROVE with absent/contradictory score→null; never fabricated), and stamps each
+  record with a new `schema_version: 2` field (the one-liner #24 deferred to point of need).
+- `bench/label.py` turns the score into reward: `reward = (quality_score / 3) / cost_usd`
+  (linear). A new session-adjacency join attributes each verifier's score to the nearest
+  preceding implementer dispatch, which doubles as the editing-dispatch filter. Reward is
+  now **auto-derived from the log by default** (closing the loop — graded reward on every
+  editing delegation, not the ~6% a human reached); the interactive human loop is retained
+  behind `--manual` and now takes a 0–3 grade. Ceiling: the adjacency join is
+  sequential-only; explicit correlation IDs follow when parallel verification lands (#13).
+  Both `--selfcheck` suites extended and green.
+
 ## [0.8.0] — 2026-06-19 · Cache measurement & compaction snapshot (#25, #27)
 
 The v0.8.0 epic (#8, "prompt-cache-aware routing") was **retired** after a
