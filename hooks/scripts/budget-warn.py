@@ -42,16 +42,30 @@ def main() -> None:
         threshold_warning = None
 
         # --- Per-task warning ---
-        # ponytail: "last matching row" is best-effort — parallel dispatches landing
-        # simultaneously mean the "last" row in the file may not be this exact call.
-        # Acceptable for a post-hoc warning; not used for enforcement.
+        # Correlate the just-written log row via dispatch_id (= tool_use_id from
+        # the PostToolUse event payload — written by log-routing.py).  Under
+        # parallel dispatch, the "last row" heuristic could pick a row from a
+        # concurrent call; dispatch_id gives us an exact match.
+        #
+        # Fallback: if dispatch_id is absent from the event (older log rows /
+        # non-standard paths), fall back to the last matching row for this
+        # session, preserving prior behaviour.
+        dispatch_id = event.get("tool_use_id") or ""
         if cfg["task_cap"] is not None:
-            last_row = None
-            for row in rows:
-                if row.get("session_id") == session_id:
-                    last_row = row
-            if last_row is not None:
-                task_val = bc.row_value(last_row, cfg["unit"])
+            task_row = None
+            if dispatch_id:
+                # Exact match: find the row written by this exact dispatch.
+                for row in rows:
+                    if row.get("dispatch_id") == dispatch_id:
+                        task_row = row
+                        break
+            if task_row is None:
+                # Fallback: last row belonging to this session.
+                for row in rows:
+                    if row.get("session_id") == session_id:
+                        task_row = row
+            if task_row is not None:
+                task_val = bc.row_value(task_row, cfg["unit"])
                 if task_val is not None and task_val > cfg["task_cap"]:
                     task_warning = (
                         f"⚠ Gearbox: last dispatch used {bc.fmt(task_val, cfg['unit'])}, "
@@ -162,8 +176,9 @@ if __name__ == "__main__":
             assert not out2, \
                 f"second run at same band must emit nothing, got {out2!r}"
 
-            # --- Case 3: per-task overage emits warning ---
+            # --- Case 3: per-task overage emits warning (fallback path: no dispatch_id) ---
             # task_cap = 50 wtok; last dispatch used 85 wtok → overage
+            # Event has no tool_use_id → fallback to last-session-row heuristic.
             budget_file.write_text(_json.dumps({"task_cap": 50, "unit": "wtok"}))
 
             captured3 = io.StringIO()
@@ -177,6 +192,50 @@ if __name__ == "__main__":
             assert "systemMessage" in parsed3, f"must have systemMessage, got {parsed3}"
             assert "per-task cap" in parsed3["systemMessage"], \
                 f"systemMessage must mention per-task cap: {parsed3['systemMessage']!r}"
+
+            # --- Case 4: dispatch_id exact match picks the right row ---
+            # Two rows for same session: one cheap (10 wtok), one expensive (200 wtok).
+            # dispatch_id matches the cheap row → no warning (10 < 50 task_cap).
+            rows_two = [
+                {"session_id": "sc-sess", "dispatch_id": "toolu_cheap", "cost_usd": 0.000010, "total_tokens": 10},
+                {"session_id": "sc-sess", "dispatch_id": "toolu_expensive", "cost_usd": 0.000200, "total_tokens": 200},
+            ]
+
+            def _fake_rows_two():
+                return rows_two
+
+            bc.read_rows = _fake_rows_two
+
+            captured4 = io.StringIO()
+            sys.stdout = captured4
+            # tool_use_id matches the cheap row; task_cap = 50 wtok
+            sys.stdin = io.StringIO(_json.dumps({
+                "session_id": "sc-sess",
+                "tool_use_id": "toolu_cheap",
+                "cwd": tmpdir,
+            }))
+            main()
+            sys.stdout = _orig_stdout
+            out4 = captured4.getvalue().strip()
+            assert not out4, \
+                f"dispatch_id=cheap (10 wtok < 50 task_cap) must emit nothing, got {out4!r}"
+
+            # Same rows but dispatch_id matches the expensive row → warning
+            captured5 = io.StringIO()
+            sys.stdout = captured5
+            sys.stdin = io.StringIO(_json.dumps({
+                "session_id": "sc-sess",
+                "tool_use_id": "toolu_expensive",
+                "cwd": tmpdir,
+            }))
+            main()
+            sys.stdout = _orig_stdout
+            out5 = captured5.getvalue().strip()
+            assert out5, \
+                f"dispatch_id=expensive (200 wtok > 50 task_cap) must emit warning, got empty"
+            parsed5 = _json.loads(out5)
+            assert "per-task cap" in parsed5["systemMessage"], \
+                f"systemMessage must mention per-task cap: {parsed5['systemMessage']!r}"
 
         bc.read_rows = _orig_read_rows
 
