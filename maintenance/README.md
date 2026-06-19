@@ -4,7 +4,7 @@
 **Our fork:** https://github.com/dividedby/gearbox (fork `main` at v0.7.1 — all filed issues + post-install fixes + 2026-06-15 audit hardening + v0.2.0 Integrity & CI and v0.3.0 Observability & data-quality milestones + v0.3.1 CodeRabbit review-fix patch + v0.4.0 learned-router milestone (a static win-rate routing prior) + v0.5.0 Credibility milestone (exact per-component token cost + modeled baseline scorecard) + v0.6.0 Control milestone: cost/quality aggressiveness knob + opt-in weighted-token budget caps + measured counterfactual benchmark (R1-live) & cost-ledger summary line (R3) + v0.6.1 orchestrator context-hygiene routing rule (R32, partial) + v0.6.2 doctor CHECK 8 plugin-root fix + v0.7.0 Visibility milestone: status-line segment + richer dashboard + SessionEnd session summaries + explicit escalation logging + v0.7.1 status-line savings reframe (segment shows estimated savings vs an all-Opus baseline, money/weighted-token toggle) + doctor CHECK 6 Step-C fix)  
 **Installed:** 2026-06-17, user scope, **v0.7.1** (fork) — reinstalled this session (`/plugin` update + `/reload-plugins`); CHECK 8 confirms installed == latest (0.7.1).  
 **Doctor status:** fork **v0.7.1** ran 2026-06-17 — **all 11 checks PASS (healthy)**. CHECK 6 live dispatch logged with exact per-component cost and confirms the Step-C `p.open()` fix (no more `TypeError`); CHECK 8 installed == latest (0.7.1); CHECK 9 routing-prior artifact present; CHECK 10 status-line segment self-checks OK but reports `NOT_WIRED` — the check greps `settings.json`, which references our `statusline.sh` wrapper, so it can't see the segment composed one level down (wiring is effectively present and live).  
-**Audit & roadmap:** [docs/audit-2026-06-15.md](docs/audit-2026-06-15.md) (full-surface audit, unified backlog G1–G33) + [docs/roadmap.md](docs/roadmap.md) (shipped v0.1.8→v0.7.1 + forward ladder v0.8.0→v2.0.0, refreshed 2026-06-17)
+**Shipped history:** [CHANGELOG.md](../CHANGELOG.md). **Forward work:** GitHub [epics](https://github.com/dividedby/gearbox/issues?q=is%3Aopen+label%3Aepic) + issues (the in-repo `docs/roadmap.md` + `audit-2026-06-15.md` were retired into GitHub on 2026-06-18; full text in git history).
 
 ## Fork
 
@@ -54,7 +54,7 @@ off the fork, and mirror each change upstream as a PR in case the maintainer ret
     no aggregate token field is present, so `cost_usd` can still be estimated.
   - Fork-only: version bump to 0.1.7. Not mirrored upstream.
 - Post-install fixes (v0.1.8), from the 2026-06-15 full-surface audit
-  ([docs/audit-2026-06-15.md](docs/audit-2026-06-15.md)). Four atomic `feature/*`
+  (2026-06-15 full-surface audit; see `CHANGELOG.md` and git history). Four atomic `feature/*`
   branches + version bump on fork `main`; all selfchecks green; installed and
   doctor-green (all 9 checks PASS, 2026-06-15):
   - **G1** (security, `feature/log-privacy`): `prompt_head` is secret-scrubbed
@@ -74,7 +74,7 @@ off the fork, and mirror each change upstream as a PR in case the maintainer ret
   - Resolved without code change: **G16** (`Explore` is a valid fallback subagent
     type), **G12** (manifest `author` stays upstream's per minimal-divergence).
   - Fork-only: version bump to 0.1.8. Audit items G15/G19–G31 are deferred to the
-    v0.2.0+ roadmap ([docs/roadmap.md](docs/roadmap.md)).
+    v0.2.0+ work (now tracked as GitHub epics).
 - v0.2.0 (Integrity & CI milestone, 2026-06-15) — five items across atomic
   `feature/*` branches + version bump on fork `main`; CI green, all four selfchecks
   pass, doctor all-9-PASS on the v0.2.0 install:
@@ -145,44 +145,31 @@ below is historical record.
 
 ## Roadmap
 
-Fork-driven (hard fork as of 2026-06-18; upstream abandoned, last upstream release
-v0.1.2). Full detail, rationale, and source tags (`[PA]` prior-art / `[CC]`
-Claude Code features / `[KB]` agent-research) live in
-[docs/roadmap.md](docs/roadmap.md), refreshed by the 2026-06-16 reassessment.
+Forward work lives in GitHub as `epic` issues with decomposed children, not in
+in-repo roadmap docs. Shipped milestones (v0.1.4 → v0.7.1) are in
+[CHANGELOG.md](../CHANGELOG.md).
 
-**Shipped:** v0.2.0 Integrity & CI (G19–G22) · v0.3.0 Observability (G23–G26) ·
-v0.4.0 *static win-rate prior* — the advisory `{task-class × tier}` table only;
-the full learned router (G27) and transcript mining (G32) did **not** ship and are
-carried forward · v0.5.0 Credibility — exact per-component token cost (R2) + a
-*modeled* baseline scorecard (R1) · v0.6.0 Control — cost/quality aggressiveness
-knob (R6) + opt-in weighted-token budget caps & threshold warnings (R4/R5) + the
-*measured* counterfactual benchmark (R1-live, `bench/run-live.py`) & its cost-ledger
-summary line (R3) — the last two initially paused, shipped 2026-06-17 · v0.6.1
-*orchestrator context hygiene* — routing rule 11 (the runtime-free half of R32): a
-proactive intentional-compaction checkpoint between dispatch batches, dropping
-verbose agent reports already persisted to the routing log before the harness's
-forced lossy auto-compact (2026-06-17) · v0.6.2 *doctor CHECK 8 fix* — version
-freshness now resolves the plugin root from the substituted `${CLAUDE_PLUGIN_ROOT}`
-token (argv, like CHECK 0) instead of `os.environ`, which the command shell
-doesn't carry; it was silently checking the upstream repo's version, not the
-fork's (2026-06-17). · v0.7.0 *Visibility* — a composable status-line segment (`bench/statusline.py`; plugins can't own the main `statusLine`, so it's wired into the user's own settings.json), a richer `bench/dashboard.py` (escalation rate, cost-over-time, prior-vs-actual tier mix), a `SessionEnd` hook writing per-session summaries to a separate `~/.claude/gearbox-sessions.jsonl`, and explicit escalation logging (`[gearbox-escalation]` marker → `escalation` log field) (2026-06-17). · v0.7.1 *status-line savings reframe* — the segment now prints `gearbox saved $0.43` (estimated savings vs an all-Opus counterfactual, re-pricing each session dispatch's token split at the top-tier rates pinned in `log-routing.py`) instead of raw spend + a role/count breakdown; `GEARBOX_STATUSLINE_UNIT=usd|tokens` toggles money vs Haiku-equivalent weighted tokens. Also a doctor CHECK 6 Step-C fix (the log-recount snippet iterated the `Path` instead of `p.open()`, raising `TypeError`) (2026-06-17).
+**Open epics** ([all](https://github.com/dividedby/gearbox/issues?q=is%3Aopen+label%3Aepic)):
 
-**Forward ladder (v0.8.0 → v2.0.0):** the prior-art verdict sets the spine — make
-the routing credible, controllable, visible, efficient, then self-improving on the
-graded-verifier signal only gearbox has, before earning 1.0 and climbing to a real
-learned router.
+| Epic | Theme |
+|------|-------|
+| #6 | Concurrency & correctness hardening *(near-term; decomposed)* |
+| #7 | Single source of truth — rates, tier map & log schema *(decomposed)* |
+| #8 | v0.8.0 — Prompt-cache-aware routing *(decomposed)* |
+| #9 | v0.9.0 — Graded reward (the moat) *(decomposed)* |
+| #10 | v1.0.0 — Production / adoption bar |
+| #11 | v1.2.0 — Learned router |
+| #12 | v1.4.0 — Calibration & benchmark hardening |
+| #13 | v1.6.0 — Parallel orchestration |
+| #14 | v1.8.0 — Ecosystem & integration |
+| #15 | v2.0.0 — Safe closed-loop self-improvement |
 
-| Milestone | Theme | Headline |
-|-----------|-------|----------|
-| ✅ **v0.7.0** | **Visibility** | **Spend/analytics dashboard + status line + session accounting** |
-| v0.8.0 | Efficiency | Prompt-cache-aware routing (cache the static policy; factor cache into tier math) |
-| v0.9.0 | Graded reward | Verifier emits a score (the moat) + transcript negative signal (G32) |
-| v1.0.0 | Adoption bar | Semver tags/CHANGELOG (G28), tool-scoped agents, declarative routing spec, moat doc (G31) |
-| v1.2.0 | Learned router | Embedding/LLM classifier over telemetry (G27), gated on the v0.5.0 harness |
-| v1.4.0 | Calibration | Threshold tuning + A/B experiments + per-project tables + benchmark task-set hardening (R29–R31) |
-| v1.6.0 | Parallelism | Map-reduce fan-out + smart-zone context budgeting (per-agent **and** orchestrator-self, R32 — rule shipped 0.6.1) |
-| v1.8.0 | Ecosystem | Gearbox MCP server + OpenTelemetry export + scheduled prior + provider hedge (G29) |
-| v2.0.0 | Moonshot | Safe online self-improvement (G33) behind eval gate + HITL + rollback |
+Sequencing: #6 (latent bugs, unblocks #13) and #7 (clean cost math, unblocks #8/#9)
+come first; then the version ladder #8 → #15. Strategic spine (from the prior-art
+verdict): make routing **credible → controllable → visible → efficient →
+self-improving** on the graded-verifier signal only gearbox has, before earning 1.0
+and climbing to a real learned router. Source tags carried on each epic: `[PA]`
+prior-art · `[CC]` Claude Code features · `[KB]` agent-research.
 
 ## Known limitations (fork v0.7.1)
 

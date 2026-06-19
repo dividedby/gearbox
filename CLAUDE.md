@@ -28,8 +28,9 @@ The fork is the only thing we track now. No upstream PR/commit/release polling.
 
 ## When you change things
 
-- New work we ship → update `maintenance/README.md` + `maintenance/docs/roadmap.md`.
-  No upstream PR to fold it into anymore.
+- New work we ship → add a `CHANGELOG.md` entry; forward/planned work lives in GitHub
+  issues + `epic`s, not in-repo roadmap docs. Update `maintenance/README.md` when the
+  installed version or limitations change. No upstream PR to fold it into anymore.
 - Don't hand-edit installed files under `~/.claude/plugins/` (the plugin cache) —
   fix in the fork repo, merge, and reinstall. We patch via the fork, never local
   cache edits.
