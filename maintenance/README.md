@@ -159,7 +159,7 @@ in-repo roadmap docs. Shipped milestones (v0.1.4 → v0.7.1) are in
 | #8 | v0.8.0 — Prompt-cache-aware routing *(decomposed)* |
 | #9 | v0.9.0 — Graded reward (the moat) *(decomposed)* |
 | #10 | v1.0.0 — Production / adoption bar |
-| #11 | v1.2.0 — Learned router |
+| #11 | v1.2.0 — Semantic routing refinement |
 | #12 | v1.4.0 — Calibration & benchmark hardening |
 | #13 | v1.6.0 — Parallel orchestration |
 | #14 | v1.8.0 — Ecosystem & integration |
@@ -169,7 +169,7 @@ Sequencing: #6 (latent bugs, unblocks #13) and #7 (clean cost math, unblocks #8/
 come first; then the version ladder #8 → #15. Strategic spine (from the prior-art
 verdict): make routing **credible → controllable → visible → efficient →
 self-improving** on the graded-verifier signal only gearbox has, before earning 1.0
-and climbing to a real learned router. Source tags carried on each epic: `[PA]`
+and climbing to semantic routing refinement. Source tags carried on each epic: `[PA]`
 prior-art · `[CC]` Claude Code features · `[KB]` agent-research.
 
 ## Known limitations (fork v0.7.1)
