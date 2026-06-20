@@ -27,6 +27,9 @@ def _load_static_tier_from_registry() -> dict:
     Falls back to a hard-coded minimal dict on any read/parse failure so the
     hook never stalls a session.
     """
+    # ponytail: hand-copied snapshot of bench/task-classes.json so the hook never
+    # stalls a session if the registry file is unreadable. Only consulted on read
+    # failure; if the registry's classes/tiers change, update this too.
     _fallback = {
         "mechanical-edit": "T0",
         "explore/read": "T0",

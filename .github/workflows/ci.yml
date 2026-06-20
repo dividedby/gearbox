@@ -55,6 +55,9 @@ jobs:
       - name: Selfcheck budget-warn.py
         run: python3 hooks/scripts/budget-warn.py --selfcheck
 
+      - name: Selfcheck classify-prompt.py
+        run: python3 hooks/scripts/classify-prompt.py --selfcheck
+
       # --- Spec-vs-code consistency (fails build on drift) ---
       # ponytail: YAML "linting" of agent frontmatter is covered by
       # check_consistency.py's frontmatter parse rather than adding a
@@ -71,3 +74,4 @@ jobs:
           python3 -c "import json; json.load(open('.claude-plugin/plugin.json'))"
           python3 -c "import json; json.load(open('.claude-plugin/marketplace.json'))"
           python3 -c "import json; json.load(open('hooks/hooks.json'))"
+          python3 -c "import json; json.load(open('bench/task-classes.json'))"

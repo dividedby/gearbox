@@ -10,6 +10,11 @@ Versions before full divergence (2026-06-18) were also mirrored upstream as PRs
 
 Forward work lives in the [open epics](https://github.com/dividedby/gearbox/issues?q=is%3Aopen+label%3Aepic).
 
+### CI hardening (post-v1.0.0 review)
+- Wire `classify-prompt.py --selfcheck` into CI and add `bench/task-classes.json` to the
+  JSON-manifest validation step. The hook selfcheck became load-bearing for the
+  task-class registry in #57 but was not yet run in CI. No runtime/plugin change.
+
 ## [1.0.0] - 2026-06-19
 
 Epic #10 "Production / adoption bar" complete — the fork's 1.0. Four operational
