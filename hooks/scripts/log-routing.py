@@ -6,8 +6,8 @@ appends one line per delegation to the canonical global log at
 ~/.claude/gearbox-log.jsonl. Each record keeps its project `cwd`, so per-project
 views are a group-by-cwd over the single global corpus.
 
-This log is the seed data for a future learned router (contextual bandit over
-{model x tier} with reward = success/cost). Verify the exact hook input schema
+This log is the seed data for the routing prior and future online routing (a
+contextual bandit over {model x tier} with reward = success/cost). Verify the exact hook input schema
 against your Claude Code version's hooks docs if fields come back empty.
 
 tool_response schema (empirically confirmed 2026-06 across 15 Task dispatches,
