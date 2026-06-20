@@ -10,6 +10,13 @@ Versions before full divergence (2026-06-18) were also mirrored upstream as PRs
 
 Forward work lives in the [open epics](https://github.com/dividedby/gearbox/issues?q=is%3Aopen+label%3Aepic).
 
+### Release tagging convention (G28)
+- Each fork release is tagged with a lightweight semver git tag (`vX.Y.Z`) placed at
+  the release's docs commit, then pushed to the fork remote. Facilitates stable refs for
+  pinning, rollback, and version reasoning. Doctor CHECK 8 (freshness) remains HEAD-based
+  and unchanged — it compares installed version against fork `main`, not tags.
+- **Retroactive:** `v0.9.0` was tagged at release commit `ee54fc8` on 2026-06-19.
+
 ## [0.9.0] - 2026-06-19
 
 Epic #9 "Graded reward — the moat" complete. Every editing delegation now yields a
