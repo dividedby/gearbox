@@ -47,26 +47,6 @@ def _load_recommend():
         return None
 
 
-def _load_log_records(log_path: Path) -> list:
-    """Read JSONL records from the gearbox log.  Returns [] on any error."""
-    records = []
-    if not log_path.exists():
-        return records
-    try:
-        with log_path.open(encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    records.append(json.loads(line))
-                except json.JSONDecodeError:
-                    pass
-    except Exception:
-        pass
-    return records
-
-
 def classify(prompt: str) -> tuple:
     """Return (task_class, recommended_tier).
 
@@ -89,7 +69,7 @@ def classify(prompt: str) -> tuple:
     if rec_mod is not None:
         try:
             log_path = Path(os.path.expanduser("~/.claude/gearbox-log.jsonl"))
-            records = _load_log_records(log_path)
+            records = rec_mod.load_records(log_path)
             if records:
                 prior = rec_mod.recommended_tiers(records)
                 recommended_tier = prior.get(task_class)
@@ -148,6 +128,13 @@ def main() -> None:
 def _selfcheck() -> None:
     import io
     import contextlib
+
+    # --- static tier map must cover all canonical task-classes ---
+    rec_mod = _load_recommend()
+    assert rec_mod is not None, "recommend module must be importable for selfcheck"
+    assert set(_STATIC_TIER) >= set(rec_mod.CLASS_ORDER), (
+        f"_STATIC_TIER is missing keys: {set(rec_mod.CLASS_ORDER) - set(_STATIC_TIER)}"
+    )
 
     # --- classify() produces the right classes for representative prompts ---
     tc, tier = classify("fix the typo in the README")
