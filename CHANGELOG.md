@@ -10,12 +10,45 @@ Versions before full divergence (2026-06-18) were also mirrored upstream as PRs
 
 Forward work lives in the [open epics](https://github.com/dividedby/gearbox/issues?q=is%3Aopen+label%3Aepic).
 
-### Release tagging convention (G28)
+## [1.0.0] - 2026-06-19
+
+Epic #10 "Production / adoption bar" complete — the fork's 1.0. Four operational
+guardrails plus one investigation harden it into a trustworthy, releasable baseline.
+
+### Release tagging convention (#55, G28)
 - Each fork release is tagged with a lightweight semver git tag (`vX.Y.Z`) placed at
-  the release's docs commit, then pushed to the fork remote. Facilitates stable refs for
-  pinning, rollback, and version reasoning. Doctor CHECK 8 (freshness) remains HEAD-based
-  and unchanged — it compares installed version against fork `main`, not tags.
-- **Retroactive:** `v0.9.0` was tagged at release commit `ee54fc8` on 2026-06-19.
+  the release's docs commit, then pushed to the fork remote — stable refs for pinning,
+  rollback, and version reasoning. Doctor CHECK 8 (freshness) remains HEAD-based and
+  unchanged (compares installed version against fork `main`, not tags).
+- **Retroactive:** `v0.9.0` tagged at release commit `ee54fc8`; `v1.0.0` tagged at this
+  release's docs commit.
+
+### Tool-scoping consistency assertion (#56, R17)
+- `bench/check_consistency.py` now asserts each agent's `tools:` frontmatter matches its
+  capability tier via a single `_TOOL_SCOPE_RULES` map: scout/verifier/architect forbid
+  `Write`/`Edit`/`Agent` (read-only), grunt forbids `Agent` (no spawn), builder
+  unrestricted. CI fails the build on any violation; `--selfcheck` covers red→green.
+
+### Canonical task-class registry (#57, R18)
+- New `bench/task-classes.json` is the single source of the task-class vocabulary
+  (ordered name/tier/keywords). `recommend.py`, the `classify-prompt.py` hook, and
+  `check_consistency.py` all derive from it; a new consistency check fails — naming the
+  offending class/consumer — on any drift. Observable output unchanged; the scoring
+  rubric stays prose.
+
+### Differentiation ADR (#58, G31)
+- `docs/adr/0003-verifier-graded-reward-differentiation.md` records the decision to
+  front-load the verifier loop + graded-reward corpus as the durable moat vs. Anthropic
+  native routing ([#27665](https://github.com/anthropics/claude-code/issues/27665)),
+  with consequences for the v2.0.0 epic (#15).
+
+### SessionStart injection-variance investigation (#59, G30)
+- Verdict: **ruled out** as a defect. `inject-routing.py` is registered unconditionally
+  (no surface-detection code) and fires identically across local surfaces (CLI confirmed
+  live; VS Code/JetBrains share `~/.claude` and run the same engine). The only
+  cross-surface difference is by-design cloud isolation (claude.ai web loads only
+  repo-committed config), already mitigated by the project-local `.claude/routing.md`
+  path. Known-limitation notes downgraded in `README.md` and `maintenance/README.md`.
 
 ## [0.9.0] - 2026-06-19
 
