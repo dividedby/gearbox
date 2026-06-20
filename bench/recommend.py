@@ -38,6 +38,23 @@ def _load_mine_corrections():
 
 
 # ---------------------------------------------------------------------------
+# Task-class registry loader
+# ---------------------------------------------------------------------------
+
+def load_task_classes(registry_path: Path | None = None) -> list:
+    """Load and return the ordered task-class registry from bench/task-classes.json.
+
+    Returns a list of dicts: [{"name": str, "tier": str, "keywords": [str, ...]}, ...]
+    The registry order is semantically significant (first-match-wins).
+    """
+    if registry_path is None:
+        registry_path = Path(__file__).resolve().parent / "task-classes.json"
+    with registry_path.open(encoding="utf-8") as f:
+        data = json.load(f)
+    return data["classes"]
+
+
+# ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
@@ -54,34 +71,20 @@ TIER_ORDER = ["T0", "T1", "T2"]
 # Order matters: specific/narrower classes precede generic ones so that
 # "format" and "rename" don't fall into "implement/fix".
 #
+# Derived from bench/task-classes.json — the canonical registry.
+#
 # ponytail: keyword matching is a ceiling — brittle for paraphrased prompts.
 # Upgrade path post-1.0.0: embed prompt_head with a small local model and
 # use a nearest-centroid or bandit classifier trained on verified rows.
-TASK_CLASSES = [
-    ("mechanical-edit", [
-        "rename", "typo", "comment", "docstring", "format", "bump version",
-        "add log line", "gitignore", "whitespace",
-    ]),
-    ("explore/read", [
-        "read", "summarize", "where is", "how does", "find", "grep", "list",
-        "locate", "search", "inspect", "report back",
-    ]),
-    ("test", [
-        "write test", "add test", "unit test", "coverage", "test_",
-    ]),
-    ("design/debug-hard", [
-        "design", "architecture", "debug", "race", "concurrency", "migration",
-        "security", "performance", "cross-cutting", "root cause", "refactor",
-    ]),
-    ("implement/fix", [
-        "implement", "fix", "add", "feature", "endpoint", "component", "bug",
-        "build", "create",
-    ]),
-    ("other", []),  # fallback — matches nothing above
-]
+_REGISTRY = load_task_classes()
+
+TASK_CLASSES = [(entry["name"], entry["keywords"]) for entry in _REGISTRY]
 
 # Canonical task-class order for table output (matches TASK_CLASSES order).
-CLASS_ORDER = [name for name, _ in TASK_CLASSES]
+CLASS_ORDER = [entry["name"] for entry in _REGISTRY]
+
+# Default tier per task-class, sourced from the registry.
+CLASS_TIERS = {entry["name"]: entry["tier"] for entry in _REGISTRY}
 
 
 # ---------------------------------------------------------------------------

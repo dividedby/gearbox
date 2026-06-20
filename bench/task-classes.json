@@ -1,0 +1,48 @@
+{
+  "classes": [
+    {
+      "name": "mechanical-edit",
+      "tier": "T0",
+      "keywords": [
+        "rename", "typo", "comment", "docstring", "format", "bump version",
+        "add log line", "gitignore", "whitespace"
+      ]
+    },
+    {
+      "name": "explore/read",
+      "tier": "T0",
+      "keywords": [
+        "read", "summarize", "where is", "how does", "find", "grep", "list",
+        "locate", "search", "inspect", "report back"
+      ]
+    },
+    {
+      "name": "test",
+      "tier": "T1",
+      "keywords": [
+        "write test", "add test", "unit test", "coverage", "test_"
+      ]
+    },
+    {
+      "name": "design/debug-hard",
+      "tier": "T2",
+      "keywords": [
+        "design", "architecture", "debug", "race", "concurrency", "migration",
+        "security", "performance", "cross-cutting", "root cause", "refactor"
+      ]
+    },
+    {
+      "name": "implement/fix",
+      "tier": "T1",
+      "keywords": [
+        "implement", "fix", "add", "feature", "endpoint", "component", "bug",
+        "build", "create"
+      ]
+    },
+    {
+      "name": "other",
+      "tier": "T1",
+      "keywords": []
+    }
+  ]
+}
