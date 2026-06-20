@@ -11,6 +11,28 @@ Versions before full divergence (2026-06-18) were also mirrored upstream as PRs
 Work landing toward the v0.9.0 epic (#9, "Graded reward — the moat"). Rolls into a
 `[0.9.0]` section when the epic completes.
 
+### UserPromptSubmit classifier hook (#31, R16)
+- **#31** New `hooks/scripts/classify-prompt.py` — `UserPromptSubmit` hook that fires
+  before every prompt turn, classifies the incoming task via `recommend.py`'s
+  `bucket_task_class()`, derives a recommended tier (from the routing prior when
+  available, falling back to static policy defaults), and injects a one-line advisory
+  into Claude's context via `hookSpecificOutput.additionalContext` (the documented
+  discrete JSON mechanism for `UserPromptSubmit`). Advisory format:
+  `[gearbox-classify] advisory: looks like a T<n> task (class: <class>). ...`.
+- **Import mechanism:** `recommend.py` has no hyphen — loaded via a `sys.path` insert
+  (bench/ resolved relative to `__file__`) then a normal `import recommend`. Reuses
+  `bucket_task_class()` and `recommended_tiers()` without modifying recommend.py.
+- **Graceful degradation:** if the prior log is absent or has insufficient data,
+  falls back to static policy-derived defaults (mechanical-edit/explore-read → T0,
+  test/implement-fix/other → T1, design/debug-hard → T2). If recommend.py cannot
+  be imported, class falls back to `"other"`. Never blocks a prompt; exits 0 on
+  any error. Does not echo the raw prompt into the advisory.
+- **No matcher** — `UserPromptSubmit` does not support matchers; hook fires on every
+  prompt.
+- `--selfcheck` suite covers: class bucketing for representative prompts, advisory
+  does not echo raw prompt, graceful no-op on empty/missing prompt, malformed stdin,
+  static fallback when classifier unavailable. Green.
+
 ### SubagentStop outcome capture (#30, R15)
 - **#30** New `hooks/scripts/subagent-outcome.py` — `SubagentStop` hook that fires
   when any subagent finishes and writes a structured outcome record
