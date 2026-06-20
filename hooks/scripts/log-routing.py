@@ -308,6 +308,25 @@ def _tool_response_text(tool_response) -> str:
     return ""
 
 
+def clamp_quality_score(verdict: str | None, raw_score: int | None) -> int | None:
+    """Clamp a raw score against the verdict to produce a consistent quality_score.
+
+    Rules (shared by resolve_routing and subagent-outcome.py):
+      reject          → 0   (forced, regardless of emitted SCORE)
+      approve + N>=1  → N   (use the score)
+      approve + 0     → None (contradiction: approve but score 0 → treat as absent)
+      approve + None  → None (no score emitted)
+      None            → None (no verdict)
+    """
+    if verdict == "reject":
+        return 0
+    if verdict == "approve":
+        if raw_score is not None:
+            return raw_score if raw_score >= 1 else None
+        return None
+    return None
+
+
 def resolve_routing(subagent_type: str, tool_input: dict, tool_response) -> dict:
     """Resolve model, model_source, tier, and verdict for a delegation.
 
@@ -344,17 +363,8 @@ def resolve_routing(subagent_type: str, tool_input: dict, tool_response) -> dict
             verdict = m.group(1).lower()
 
         sm = _SCORE_RE.search(text)
-        if verdict == "reject":
-            # Consistency clamp: reject always forces score 0.
-            quality_score = 0
-        elif verdict == "approve":
-            if sm:
-                parsed = int(sm.group(1))
-                # Contradiction: approve but SCORE 0 → treat as absent.
-                quality_score = parsed if parsed >= 1 else None
-            else:
-                quality_score = None
-        # If verdict is None (no verdict found), quality_score stays None.
+        raw_score = int(sm.group(1)) if sm else None
+        quality_score = clamp_quality_score(verdict, raw_score)
 
     return {"model": model, "model_source": model_source, "tier": tier, "verdict": verdict, "quality_score": quality_score}
 

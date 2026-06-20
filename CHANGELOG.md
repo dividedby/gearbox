@@ -11,6 +11,27 @@ Versions before full divergence (2026-06-18) were also mirrored upstream as PRs
 Work landing toward the v0.9.0 epic (#9, "Graded reward — the moat"). Rolls into a
 `[0.9.0]` section when the epic completes.
 
+### SubagentStop outcome capture (#30, R15)
+- **#30** New `hooks/scripts/subagent-outcome.py` — `SubagentStop` hook that fires
+  when any subagent finishes and writes a structured outcome record
+  (`ts`, `session_id`, `agent_id`, `agent_type`, `verdict`, `quality_score`,
+  `message_head`) to `~/.claude/gearbox-subagent-outcomes.jsonl`. Verdict/score
+  extraction uses the same regexes and clamp as `log-routing.py`.
+- **Schema fix (R15 review):** primary message source is `last_assistant_message`
+  (undocumented field — cheap fast-path when present); reliable documented fallback
+  reads the final assistant text block from the subagent's transcript jsonl at
+  `<session-dir>/subagents/agent-<agent_id>.jsonl`, with `agent_transcript_path`
+  preferred when the payload carries it. If neither yields a message, verdict/score
+  are recorded as null (graceful, exit 0).
+- **Shared clamp helper:** extracted `clamp_quality_score(verdict, raw_score)` from
+  `log-routing.resolve_routing()` into a standalone function in `log-routing.py`;
+  both `resolve_routing()` and `subagent-outcome._extract_verdict_score()` call it —
+  eliminates drift between the two clamp implementations.
+- **Loader consolidation:** replaced hand-rolled importlib bootstrap in
+  `subagent-outcome.py` with `routing_loader.load_log_routing()`.
+- Both `--selfcheck` suites extended (transcript-read fallback, `agent_transcript_path`
+  preference, all-empty graceful path) and green.
+
 ### Graded reward (#28, R13)
 - **#28** Graded verifier signal — the verifier now emits a `SCORE: N` line (integer
   0–3 quality ordinal: 0=reject, 1=weak, 2=solid, 3=excellent) alongside the existing
