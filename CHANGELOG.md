@@ -8,8 +8,15 @@ Versions before full divergence (2026-06-18) were also mirrored upstream as PRs
 
 ## [Unreleased]
 
-Work landing toward the v0.9.0 epic (#9, "Graded reward — the moat"). Rolls into a
-`[0.9.0]` section when the epic completes.
+Forward work lives in the [open epics](https://github.com/dividedby/gearbox/issues?q=is%3Aopen+label%3Aepic).
+
+## [0.9.0] - 2026-06-19
+
+Epic #9 "Graded reward — the moat" complete. Every editing delegation now yields a
+graded reward (R13), orchestrator corrections / re-dispatches / escalations become a
+negative signal (R14), each subagent's outcome is captured structurally at completion
+(R15), and a tier pre-classifier surfaces an advisory before each turn (R16). The prior
+is no longer reward-sparse.
 
 ### UserPromptSubmit classifier hook (#31, R16)
 - **#31** New `hooks/scripts/classify-prompt.py` — `UserPromptSubmit` hook that fires
@@ -53,6 +60,24 @@ Work landing toward the v0.9.0 epic (#9, "Graded reward — the moat"). Rolls in
   `subagent-outcome.py` with `routing_loader.load_log_routing()`.
 - Both `--selfcheck` suites extended (transcript-read fallback, `agent_transcript_path`
   preference, all-empty graceful path) and green.
+
+### Transcript negative-reward miner (#29, R14)
+- **#29** New `bench/mine-corrections.py` — mines session transcripts
+  (`~/.claude/projects/<proj>/<session>.jsonl`) for the negative-reward signal the
+  structured log can't see: orchestrator corrections, re-dispatches, and tier
+  escalations. Each signal is attributed to the dispatch that *failed* (the dispatch
+  preceding the orchestrator's correction text), not the one that fixed it.
+- **Join:** by `session_id` + the transcript `tool_use_id`, which equals the routing
+  log's `dispatch_id` (present on R13-era and newer records; the log's `uid` is a
+  pid-ns token that can't join cross-source, so it's a left-outer fallback only).
+- **Safety:** reuses `_scrub_secrets` + the 200-char `prompt_head` cap from
+  `log-routing.py` (via `routing_loader` delegators — no reimplementation); emits only
+  derived signals (counts, booleans, ids, scrubbed+capped head) — **never** raw
+  transcript text. `--selfcheck` asserts detection, attribution, and no-raw-leak.
+- **Consumption:** `bench/recommend.py` reads the signal opt-in via `--corrections`
+  (auto-detected); a correction without an explicit verdict is treated as an implicit
+  reject for the failing tier. Recommendation output is unchanged when no corrections
+  file exists.
 
 ### Graded reward (#28, R13)
 - **#28** Graded verifier signal — the verifier now emits a `SCORE: N` line (integer
