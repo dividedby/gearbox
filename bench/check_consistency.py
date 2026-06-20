@@ -6,6 +6,12 @@ Cross-checks three sources of truth:
   (B) log-routing.py       — _AGENT_ROUTING dict (agent → tier, model)
   (C) agents/<name>.md     — frontmatter model: field (agent → model)
 
+Also checks the task-class vocabulary registry (bench/task-classes.json)
+against all consumers:
+  (R) bench/task-classes.json — canonical class name + tier (the registry)
+  (Rr) recommend.py           — CLASS_ORDER + CLASS_TIERS derived from registry
+  (Rc) classify-prompt.py     — _STATIC_TIER built from registry at import time
+
 Normalises agent names to bare lowercase (strips any "gearbox:" prefix).
 
 Special case: "verifier" carries meta-tier TV in (B) and has a frontmatter
@@ -19,6 +25,7 @@ Exit 1 — one or more violations found (report printed before exit).
 import argparse
 import ast
 import importlib.util
+import json
 import re
 import sys
 from pathlib import Path
@@ -251,6 +258,127 @@ def check_tool_scoping(agent_tools: dict) -> list[str]:
                 f"declared in tools: frontmatter"
             )
     return violations
+
+
+# ---------------------------------------------------------------------------
+# Task-class registry check (R)
+# ---------------------------------------------------------------------------
+
+def load_task_class_registry(registry_path: Path) -> list:
+    """Load bench/task-classes.json and return the classes list.
+
+    Each element: {"name": str, "tier": str, "keywords": [...]}
+    Raises on missing file or malformed JSON (fail loudly, not silently pass).
+    """
+    with registry_path.open(encoding="utf-8") as f:
+        data = json.load(f)
+    classes = data.get("classes")
+    if not isinstance(classes, list) or len(classes) == 0:
+        raise ValueError(f"Registry {registry_path} has no 'classes' list or it is empty")
+    return classes
+
+
+def check_task_class_consumers(
+    registry_classes: list,
+    recommend_class_order: list,
+    recommend_class_tiers: dict,
+    classify_static_tier: dict,
+) -> list:
+    """Return violations where any consumer's vocabulary diverges from the registry.
+
+    registry_classes:      ordered list of {"name", "tier", "keywords"} from the registry
+    recommend_class_order: CLASS_ORDER from recommend.py
+    recommend_class_tiers: CLASS_TIERS from recommend.py  ({name: tier})
+    classify_static_tier:  _STATIC_TIER from classify-prompt.py ({name: tier})
+
+    Checks:
+    - recommend CLASS_ORDER contains exactly the registry names in the same order
+    - recommend CLASS_TIERS contains the correct tier for each registry class
+    - classify _STATIC_TIER contains exactly the registry name→tier mapping
+    """
+    violations = []
+    registry_names = [e["name"] for e in registry_classes]
+    registry_tiers = {e["name"]: e["tier"] for e in registry_classes}
+
+    # --- recommend: CLASS_ORDER must match registry order ---
+    if recommend_class_order != registry_names:
+        # Find the first divergence to name it.
+        for i, (reg, rec) in enumerate(zip(registry_names, recommend_class_order)):
+            if reg != rec:
+                violations.append(
+                    f"[task-class-order] recommend CLASS_ORDER[{i}]={rec!r} "
+                    f"but registry has {reg!r}"
+                )
+                break
+        if len(recommend_class_order) != len(registry_names):
+            extra = set(recommend_class_order) - set(registry_names)
+            missing = set(registry_names) - set(recommend_class_order)
+            if extra:
+                violations.append(
+                    f"[task-class-extra] recommend CLASS_ORDER has classes not in registry: "
+                    f"{sorted(extra)}"
+                )
+            if missing:
+                violations.append(
+                    f"[task-class-missing] recommend CLASS_ORDER is missing registry classes: "
+                    f"{sorted(missing)}"
+                )
+
+    # --- recommend: CLASS_TIERS must match registry tiers ---
+    for name, reg_tier in registry_tiers.items():
+        rec_tier = recommend_class_tiers.get(name)
+        if rec_tier is None:
+            violations.append(
+                f"[task-class-missing] recommend CLASS_TIERS has no entry for {name!r}"
+            )
+        elif rec_tier != reg_tier:
+            violations.append(
+                f"[task-class-tier-mismatch] recommend CLASS_TIERS[{name!r}]={rec_tier!r} "
+                f"but registry has {reg_tier!r}"
+            )
+    for name in set(recommend_class_tiers) - set(registry_tiers):
+        violations.append(
+            f"[task-class-extra] recommend CLASS_TIERS has class not in registry: {name!r}"
+        )
+
+    # --- classify: _STATIC_TIER must exactly match registry name→tier map ---
+    if classify_static_tier != registry_tiers:
+        for name, reg_tier in registry_tiers.items():
+            cls_tier = classify_static_tier.get(name)
+            if cls_tier is None:
+                violations.append(
+                    f"[task-class-missing] classify _STATIC_TIER has no entry for {name!r}"
+                )
+            elif cls_tier != reg_tier:
+                violations.append(
+                    f"[task-class-tier-mismatch] classify _STATIC_TIER[{name!r}]={cls_tier!r} "
+                    f"but registry has {reg_tier!r}"
+                )
+        for name in set(classify_static_tier) - set(registry_tiers):
+            violations.append(
+                f"[task-class-extra] classify _STATIC_TIER has class not in registry: {name!r}"
+            )
+
+    return violations
+
+
+def load_recommend_vocab(bench_dir: Path) -> tuple[list, dict]:
+    """Import recommend.py and return (CLASS_ORDER, CLASS_TIERS)."""
+    bench_str = str(bench_dir)
+    if bench_str not in sys.path:
+        sys.path.insert(0, bench_str)
+    import recommend
+    return list(recommend.CLASS_ORDER), dict(recommend.CLASS_TIERS)
+
+
+def load_classify_static_tier(scripts_dir: Path) -> dict:
+    """Import classify-prompt.py and return its _STATIC_TIER dict."""
+    spec = importlib.util.spec_from_file_location(
+        "_classify_prompt", scripts_dir / "classify-prompt.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return dict(mod._STATIC_TIER)
 
 
 # ---------------------------------------------------------------------------
@@ -578,6 +706,59 @@ def _run_selfcheck() -> None:
     assert not any("builder" in x and "tool-scope" in x for x in vs6), \
         f"builder with Write/Edit/Agent must NOT be flagged, got: {vs6}"
 
+    # ---------------------------------------------------------------------------
+    # check_task_class_consumers tests
+    # ---------------------------------------------------------------------------
+
+    _reg_aligned = [
+        {"name": "mechanical-edit", "tier": "T0", "keywords": ["rename"]},
+        {"name": "explore/read",    "tier": "T0", "keywords": ["read"]},
+        {"name": "implement/fix",   "tier": "T1", "keywords": ["implement"]},
+        {"name": "other",           "tier": "T1", "keywords": []},
+    ]
+    _aligned_order = ["mechanical-edit", "explore/read", "implement/fix", "other"]
+    _aligned_tiers = {"mechanical-edit": "T0", "explore/read": "T0",
+                      "implement/fix": "T1", "other": "T1"}
+
+    # Aligned consumers → no violations.
+    vtc0 = check_task_class_consumers(
+        _reg_aligned, _aligned_order, _aligned_tiers, dict(_aligned_tiers)
+    )
+    assert vtc0 == [], f"aligned consumers must produce no violations, got: {vtc0}"
+
+    # Divergent: recommend CLASS_ORDER has a class not in registry → flagged.
+    _order_extra = _aligned_order + ["ghost-class"]
+    _tiers_extra = dict(_aligned_tiers, **{"ghost-class": "T1"})
+    vtc1 = check_task_class_consumers(
+        _reg_aligned, _order_extra, _tiers_extra, dict(_aligned_tiers)
+    )
+    assert any("ghost-class" in x and "task-class-extra" in x for x in vtc1), \
+        f"extra class in recommend must be flagged, got: {vtc1}"
+
+    # Divergent: recommend CLASS_TIERS has wrong tier for a class → flagged.
+    _tiers_wrong = dict(_aligned_tiers, **{"implement/fix": "T2"})
+    vtc2 = check_task_class_consumers(
+        _reg_aligned, _aligned_order, _tiers_wrong, dict(_aligned_tiers)
+    )
+    assert any("implement/fix" in x and "task-class-tier-mismatch" in x for x in vtc2), \
+        f"tier mismatch in recommend CLASS_TIERS must be flagged, got: {vtc2}"
+
+    # Divergent: classify _STATIC_TIER missing a class → flagged.
+    _cls_missing = {k: v for k, v in _aligned_tiers.items() if k != "other"}
+    vtc3 = check_task_class_consumers(
+        _reg_aligned, _aligned_order, _aligned_tiers, _cls_missing
+    )
+    assert any("other" in x and "task-class-missing" in x for x in vtc3), \
+        f"missing class in classify _STATIC_TIER must be flagged, got: {vtc3}"
+
+    # Divergent: classify _STATIC_TIER has wrong tier → flagged.
+    _cls_wrong_tier = dict(_aligned_tiers, **{"explore/read": "T2"})
+    vtc4 = check_task_class_consumers(
+        _reg_aligned, _aligned_order, _aligned_tiers, _cls_wrong_tier
+    )
+    assert any("explore/read" in x and "task-class-tier-mismatch" in x for x in vtc4), \
+        f"wrong tier in classify _STATIC_TIER must be flagged, got: {vtc4}"
+
     print("selfcheck OK")
     sys.exit(0)
 
@@ -592,6 +773,9 @@ def run_real_check() -> None:
     routing_md_path = root / "routing" / "routing.md"
     log_routing_path = root / "hooks" / "scripts" / "log-routing.py"
     agents_dir = root / "agents"
+    registry_path = root / "bench" / "task-classes.json"
+    bench_dir = root / "bench"
+    scripts_dir = root / "hooks" / "scripts"
 
     routing_md = parse_routing_md(routing_md_path)
     agent_routing = parse_agent_routing(log_routing_path)
@@ -602,6 +786,14 @@ def run_real_check() -> None:
     violations = compare(routing_md, agent_routing, frontmatters)
     violations += compare_tier_model(agent_routing, tier_model)
     violations += check_tool_scoping(agent_tools)
+
+    # Task-class registry consistency check.
+    registry_classes = load_task_class_registry(registry_path)
+    recommend_class_order, recommend_class_tiers = load_recommend_vocab(bench_dir)
+    classify_static_tier = load_classify_static_tier(scripts_dir)
+    violations += check_task_class_consumers(
+        registry_classes, recommend_class_order, recommend_class_tiers, classify_static_tier
+    )
 
     if violations:
         print("CONSISTENCY VIOLATIONS FOUND:")

@@ -15,19 +15,41 @@ import os
 import sys
 from pathlib import Path
 
+
 # ---------------------------------------------------------------------------
-# Static fallback tier map (used when the routing prior has no data for a class).
-# Derived from the routing policy in routing/routing.md.
+# Task-class registry loader (direct JSON read — no dependency on recommend.py).
 # ---------------------------------------------------------------------------
 
-_STATIC_TIER: dict = {
-    "mechanical-edit": "T0",
-    "explore/read": "T0",
-    "test": "T1",
-    "design/debug-hard": "T2",
-    "implement/fix": "T1",
-    "other": "T1",
-}
+def _load_static_tier_from_registry() -> dict:
+    """Build the static tier map by reading bench/task-classes.json directly.
+
+    Resolves relative to this file: hooks/scripts/ → ../../bench/task-classes.json.
+    Falls back to a hard-coded minimal dict on any read/parse failure so the
+    hook never stalls a session.
+    """
+    _fallback = {
+        "mechanical-edit": "T0",
+        "explore/read": "T0",
+        "test": "T1",
+        "design/debug-hard": "T2",
+        "implement/fix": "T1",
+        "other": "T1",
+    }
+    try:
+        registry_path = Path(__file__).resolve().parent.parent.parent / "bench" / "task-classes.json"
+        with registry_path.open(encoding="utf-8") as f:
+            data = json.load(f)
+        return {entry["name"]: entry["tier"] for entry in data["classes"]}
+    except Exception:
+        return _fallback
+
+
+# ---------------------------------------------------------------------------
+# Static fallback tier map (used when the routing prior has no data for a class).
+# Loaded from bench/task-classes.json — the canonical registry.
+# ---------------------------------------------------------------------------
+
+_STATIC_TIER: dict = _load_static_tier_from_registry()
 
 
 def _load_recommend():
@@ -129,7 +151,18 @@ def _selfcheck() -> None:
     import io
     import contextlib
 
-    # --- static tier map must cover all canonical task-classes ---
+    # --- static tier map must exactly match the registry ---
+    # Load the registry directly to verify _STATIC_TIER was populated from it.
+    registry_path = Path(__file__).resolve().parent.parent.parent / "bench" / "task-classes.json"
+    with registry_path.open(encoding="utf-8") as _f:
+        _reg_data = json.load(_f)
+    _registry_tier_map = {entry["name"]: entry["tier"] for entry in _reg_data["classes"]}
+    assert _STATIC_TIER == _registry_tier_map, (
+        f"_STATIC_TIER does not match registry.\n"
+        f"  _STATIC_TIER: {_STATIC_TIER}\n"
+        f"  registry:     {_registry_tier_map}"
+    )
+    # Also verify via recommend module (belt-and-suspenders: registry and recommend agree).
     rec_mod = _load_recommend()
     assert rec_mod is not None, "recommend module must be importable for selfcheck"
     assert set(_STATIC_TIER) >= set(rec_mod.CLASS_ORDER), (
