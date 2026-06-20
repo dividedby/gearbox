@@ -146,15 +146,13 @@ def parse_agent_routing(path: Path) -> dict:
 # Source (C): parse agents/*.md frontmatter
 # ---------------------------------------------------------------------------
 
-def parse_frontmatter_model(path: Path) -> str | None:
-    """Return the `model:` value from YAML frontmatter between --- delimiters.
-
-    Returns None if no frontmatter or no model key found.
-    """
+def _parse_frontmatter_lines(path: Path) -> list[str]:
+    """Return lines inside the YAML frontmatter block (between the two --- delimiters)."""
     lines = path.read_text(encoding="utf-8").splitlines()
     if not lines or lines[0].strip() != "---":
-        return None
+        return []
     in_front = False
+    result = []
     for line in lines:
         if line.strip() == "---":
             if not in_front:
@@ -163,9 +161,32 @@ def parse_frontmatter_model(path: Path) -> str | None:
             else:
                 break  # end of frontmatter
         if in_front:
-            m = re.match(r"^model\s*:\s*(.+)$", line.strip())
-            if m:
-                return m.group(1).strip().lower()
+            result.append(line)
+    return result
+
+
+def parse_frontmatter_model(path: Path) -> str | None:
+    """Return the `model:` value from YAML frontmatter between --- delimiters.
+
+    Returns None if no frontmatter or no model key found.
+    """
+    for line in _parse_frontmatter_lines(path):
+        m = re.match(r"^model\s*:\s*(.+)$", line.strip())
+        if m:
+            return m.group(1).strip().lower()
+    return None
+
+
+def parse_frontmatter_tools(path: Path) -> list[str] | None:
+    """Return the `tools:` value as a list of stripped tool names from frontmatter.
+
+    Returns None if no frontmatter or no tools key found.
+    """
+    for line in _parse_frontmatter_lines(path):
+        m = re.match(r"^tools\s*:\s*(.+)$", line.strip())
+        if m:
+            raw = m.group(1).strip()
+            return [t.strip() for t in raw.split(",") if t.strip()]
     return None
 
 
@@ -178,6 +199,58 @@ def parse_agent_frontmatters(agents_dir: Path) -> dict:
         if model is not None:
             result[bare] = model
     return result
+
+
+def parse_agent_tools(agents_dir: Path) -> dict:
+    """Return {bare_agent: [tool, ...]} from all agents/*.md frontmatters."""
+    result = {}
+    for md_file in sorted(agents_dir.glob("*.md")):
+        bare = md_file.stem.lower()
+        tools = parse_frontmatter_tools(md_file)
+        if tools is not None:
+            result[bare] = tools
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Source (E): tool-scoping rules
+# ---------------------------------------------------------------------------
+
+# Capability class per agent.  The values are frozensets of tool names that
+# MUST NOT appear in that agent's `tools:` frontmatter.
+#
+# Rationale:
+#   read-only tiers (scout, verifier, architect) — no Write, Edit, or Agent
+#   grunt — no Agent (may Edit but must not spawn sub-agents)
+#   builder — unconstrained (Write/Edit allowed); only present to enumerate it
+_TOOL_SCOPE_RULES: dict[str, frozenset[str]] = {
+    "scout":     frozenset({"Write", "Edit", "Agent"}),
+    "verifier":  frozenset({"Write", "Edit", "Agent"}),
+    "architect": frozenset({"Write", "Edit", "Agent"}),
+    "grunt":     frozenset({"Agent"}),
+    "builder":   frozenset(),
+}
+
+
+def check_tool_scoping(agent_tools: dict) -> list[str]:
+    """Return violations where an agent's tools: frontmatter breaches its capability class.
+
+    agent_tools: {bare_agent: [tool, ...]}  (from parse_agent_tools)
+    """
+    violations = []
+    for agent, forbidden in sorted(_TOOL_SCOPE_RULES.items()):
+        if agent not in agent_tools:
+            # Missing frontmatter is caught by the presence checks in compare().
+            continue
+        declared = set(agent_tools[agent])
+        bad = declared & forbidden
+        if bad:
+            sorted_bad = ", ".join(sorted(bad))
+            violations.append(
+                f"[tool-scope] agent={agent!r}: forbidden tool(s) {sorted_bad!r} "
+                f"declared in tools: frontmatter"
+            )
+    return violations
 
 
 # ---------------------------------------------------------------------------
@@ -459,6 +532,52 @@ def _run_selfcheck() -> None:
     assert any("TV" in x and "tier-model-extra" in x for x in vt5), \
         f"TIER_MODEL with TV entry must be flagged as extra, got: {vt5}"
 
+    # ---------------------------------------------------------------------------
+    # check_tool_scoping tests
+    # ---------------------------------------------------------------------------
+
+    tools_ok = {
+        "scout":     ["Read", "Grep", "Glob", "Bash"],
+        "grunt":     ["Read", "Edit", "Grep", "Glob", "Bash"],
+        "builder":   ["Read", "Write", "Edit", "Grep", "Glob", "Bash"],
+        "architect": ["Read", "Grep", "Glob", "Bash"],
+        "verifier":  ["Read", "Grep", "Glob", "Bash"],
+    }
+
+    # Correct tool sets → no violations
+    vs1 = check_tool_scoping(tools_ok)
+    assert vs1 == [], f"correct tool sets must produce no violations, got: {vs1}"
+
+    # Scout with Write → flagged
+    tools_scout_write = dict(tools_ok, scout=["Read", "Write", "Grep", "Glob", "Bash"])
+    vs2 = check_tool_scoping(tools_scout_write)
+    assert any("scout" in x and "tool-scope" in x for x in vs2), \
+        f"scout with Write must be flagged, got: {vs2}"
+
+    # Verifier with Edit → flagged
+    tools_verifier_edit = dict(tools_ok, verifier=["Read", "Edit", "Grep", "Glob", "Bash"])
+    vs3 = check_tool_scoping(tools_verifier_edit)
+    assert any("verifier" in x and "tool-scope" in x for x in vs3), \
+        f"verifier with Edit must be flagged, got: {vs3}"
+
+    # Architect with Agent → flagged
+    tools_arch_agent = dict(tools_ok, architect=["Read", "Agent", "Grep", "Glob", "Bash"])
+    vs4 = check_tool_scoping(tools_arch_agent)
+    assert any("architect" in x and "tool-scope" in x for x in vs4), \
+        f"architect with Agent must be flagged, got: {vs4}"
+
+    # Grunt with Agent → flagged
+    tools_grunt_agent = dict(tools_ok, grunt=["Read", "Edit", "Agent", "Grep", "Glob", "Bash"])
+    vs5 = check_tool_scoping(tools_grunt_agent)
+    assert any("grunt" in x and "tool-scope" in x for x in vs5), \
+        f"grunt with Agent must be flagged, got: {vs5}"
+
+    # Builder with Write and Edit → NOT flagged (builder may have both)
+    tools_builder_full = dict(tools_ok, builder=["Read", "Write", "Edit", "Agent", "Grep", "Glob", "Bash"])
+    vs6 = check_tool_scoping(tools_builder_full)
+    assert not any("builder" in x and "tool-scope" in x for x in vs6), \
+        f"builder with Write/Edit/Agent must NOT be flagged, got: {vs6}"
+
     print("selfcheck OK")
     sys.exit(0)
 
@@ -477,10 +596,12 @@ def run_real_check() -> None:
     routing_md = parse_routing_md(routing_md_path)
     agent_routing = parse_agent_routing(log_routing_path)
     frontmatters = parse_agent_frontmatters(agents_dir)
+    agent_tools = parse_agent_tools(agents_dir)
     tier_model = load_tier_model(log_routing_path)
 
     violations = compare(routing_md, agent_routing, frontmatters)
     violations += compare_tier_model(agent_routing, tier_model)
+    violations += check_tool_scoping(agent_tools)
 
     if violations:
         print("CONSISTENCY VIOLATIONS FOUND:")
